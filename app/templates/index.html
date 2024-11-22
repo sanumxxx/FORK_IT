@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="mb-8">
+    <form id="uploadForm" class="bg-white rounded-lg shadow-sm p-6">
+        <h2 class="text-lg font-semibold mb-4">Загрузить PDF</h2>
+        <div class="flex gap-4">
+            <input type="file" name="file" accept=".pdf" required 
+                   class="block w-full text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+            <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                Загрузить
+            </button>
+        </div>
+    </form>
+</div>
+
+<div class="bg-white rounded-lg shadow-sm p-6 mb-8">
+    <h2 class="text-lg font-semibold mb-4">Фильтры</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Вид спорта</label>
+            <input type="text" id="sportType" class="w-full rounded-lg border border-gray-300 px-3 py-2">
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Регион</label>
+            <input type="text" id="region" class="w-full rounded-lg border border-gray-300 px-3 py-2">
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Начало</label>
+            <input type="date" id="startDate" class="w-full rounded-lg border border-gray-300 px-3 py-2">
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Конец</label>
+            <input type="date" id="endDate" class="w-full rounded-lg border border-gray-300 px-3 py-2">
+        </div>
+    </div>
+    <div class="mt-4">
+        <button onclick="fetchEvents()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+            Применить фильтры
+        </button>
+    </div>
+</div>
+
+<div id="eventsList" class="space-y-4"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const renderEvent = (event) => {
+    return `
+    <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+        <div class="p-6">
+            <div class="flex items-center mb-4">
+                <span class="bg-blue-500 text-white px-3 py-1 rounded-full text-sm">
+                    ${event.event_type || 'Физкультурные'}
+                </span>
+            </div>
+
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">${event.name}</h2>
+
+            <div class="text-gray-500 uppercase text-sm tracking-wide mb-4">
+                ВСЕРОССИЙСКИЕ ФИЗКУЛЬТУРНЫЕ МЕРОПРИЯТИЯ
+            </div>
+
+            <div class="space-y-3">
+                <div class="flex items-center gap-3">
+                    <span class="w-8 h-8 flex items-center justify-center bg-blue-50 rounded-full">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                    </span>
+                    <span class="text-gray-500">Вид спорта:</span>
+                    <span class="font-medium">${event.sport_type}</span>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <span class="w-8 h-8 flex items-center justify-center bg-blue-50 rounded-full">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                    </span>
+                    <span class="text-gray-500">Возрастная группа:</span>
+                    <span class="font-medium">${event.age_group || 'Не указано'}</span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 pt-6 border-t">
+                <div class="flex items-center gap-3">
+                    <span class="w-8 h-8 flex items-center justify-center bg-gray-50 rounded-full">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                    </span>
+                    ${event.start_date} – ${event.end_date}
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <span class="w-8 h-8 flex items-center justify-center bg-gray-50 rounded-full">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                    </span>
+                    ${event.location.city !== 'Не указано' ? event.location.city : ''}
+${event.location.region !== 'Не указано' ? event.location.region : 'Не указано'}
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <span class="w-8 h-8 flex items-center justify-center bg-gray-50 rounded-full">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/>
+                        </svg>
+                    </span>
+                    № ЕКП: ${event.ekp_number}
+                </div>
+            </div>
+        </div>
+    </div>
+    `;
+};
+
+document.getElementById('uploadForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    
+    try {
+        const response = await axios.post('/upload', formData);
+        alert(response.data.message);
+        fetchEvents();
+    } catch (error) {
+        alert(error.response?.data?.error || 'Ошибка загрузки');
+    }
+};
+
+async function fetchEvents() {
+    const params = {
+        sport_type: document.getElementById('sportType').value,
+        region: document.getElementById('region').value,
+        start_date: document.getElementById('startDate').value,
+        end_date: document.getElementById('endDate').value
+    };
+
+    try {
+        const response = await axios.get('/events', { params });
+        const eventsList = document.getElementById('eventsList');
+        eventsList.innerHTML = response.data.map(event => renderEvent(event)).join('');
+    } catch (error) {
+        alert('Ошибка получения данных');
+    }
+}
+
+// Initial load
+fetchEvents();
+</script>
+{% endblock %}
