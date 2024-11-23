@@ -2,21 +2,47 @@
 
 {% block content %}
 <!-- Загрузка PDF -->
-<div class="mb-8">
-    <form class="bg-white rounded-lg shadow-sm p-6" id="uploadForm">
-        <h2 class="text-lg font-semibold mb-4">Загрузить PDF</h2>
-        <div class="flex gap-4">
-            <input accept=".pdf"
-                   class="block w-full text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                   name="file" required
-                   type="file">
-            <button class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700" type="submit">
-                Загрузить
-            </button>
-        </div>
-    </form>
-</div>
 
+<!-- Загрузка PDF -->
+<div class="mb-8 space-y-4">
+    <div class="bg-white rounded-lg shadow-sm p-6">
+        <form class="space-y-4" id="uploadForm">
+            <h2 class="text-lg font-semibold">Загрузить PDF</h2>
+            <div class="flex gap-4">
+                <input accept=".pdf"
+                       class="block w-full text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                       name="file" required
+                       type="file">
+                <button class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed" type="submit">
+                    Загрузить
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Прогресс загрузки -->
+    <div class="hidden bg-white rounded-lg shadow-sm p-6" id="uploadProgress">
+        <div class="space-y-4">
+            <div class="flex justify-between text-sm text-gray-600 mb-1">
+                <span id="progressStatus">Подготовка к обработке...</span>
+                <span id="progressPercentage">0%</span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-2">
+                <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" id="progressBar" style="width: 0%"></div>
+            </div>
+            <div class="text-sm text-gray-500" id="pageStatus">
+                Страница: 0/0
+            </div>
+        </div>
+    </div>
+
+    <!-- Лог обработки -->
+    <div class="hidden bg-white rounded-lg shadow-sm p-6" id="processingLog">
+        <h3 class="text-lg font-semibold mb-4">Лог обработки</h3>
+        <div class="space-y-2 max-h-48 overflow-y-auto text-sm" id="logContent">
+        </div>
+    </div>
+</div>
 <!-- Месячный слайдер -->
 <div class="bg-white rounded-lg shadow-sm p-6 mb-8">
     <div class="flex justify-between items-center">
@@ -76,7 +102,6 @@
     </div>
 </div>
 
-
 <!-- Список событий -->
 <div class="space-y-4" id="eventsList"></div>
 
@@ -96,11 +121,60 @@
 
 {% block scripts %}
 <script>
-
     let currentPage = 1;
     let hasNextPage = false;
     let isLoading = false;
     let currentEvents = [];
+
+    let processedEvents = new Set();
+
+
+
+   function addLogEntry(message, type = 'info') {
+    const logContent = document.getElementById('logContent');
+    const entry = document.createElement('div');
+    entry.className = `py-1 px-2 rounded ${
+        type === 'error' ? 'bg-red-50 text-red-700' :
+        type === 'success' ? 'bg-green-50 text-green-700' :
+        'bg-gray-50 text-gray-700'
+    }`;
+    entry.textContent = message;
+    logContent.appendChild(entry);
+    logContent.scrollTop = logContent.scrollHeight;
+}
+
+    function updateProgress(status) {
+    const progressBar = document.getElementById('progressBar');
+    const progressStatus = document.getElementById('progressStatus');
+    const progressPercentage = document.getElementById('progressPercentage');
+    const pageStatus = document.getElementById('pageStatus');
+    const eventStatus = document.getElementById('eventStatus');
+
+    // Обновляем прогресс-бар
+    progressBar.style.width = `${status.progress}%`;
+    progressStatus.textContent = status.message;
+    progressPercentage.textContent = `${Math.round(status.progress)}%`;
+
+    // Обновляем статус страниц
+    pageStatus.textContent = `Страница: ${status.current_page}/${status.total_pages}`;
+
+    // Обновляем статус событий
+    eventStatus.textContent = `Обработано событий: ${status.processed_events}/${status.total_events}`;
+}
+
+    function addNewEvent(event) {
+    if (processedEvents.has(event.ekp_number)) return;
+
+    processedEvents.add(event.ekp_number);
+    const eventsList = document.getElementById('eventsList');
+    const eventElement = document.createElement('div');
+    eventElement.innerHTML = renderEvent(event);
+    eventsList.insertBefore(eventElement.firstChild, eventsList.firstChild);
+}
+
+
+
+
     // Управление месяцами
     const months = [
         'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
@@ -109,6 +183,100 @@
 
     let currentMonthIndex = new Date().getMonth();
     let currentYear = new Date().getFullYear();
+
+    // Рендеринг карточки события
+    const renderEvent = (event) => {
+        return `
+        <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+            <div class="p-6">
+                <div class="flex items-center mb-4">
+                    <span class="bg-blue-500 text-white px-3 py-1 rounded-full text-sm">
+                        ${event.sport_type || 'Спорт'}
+                    </span>
+                </div>
+
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">${event.name}</h2>
+
+                <div class="text-gray-500 uppercase text-sm tracking-wide mb-4">
+                    ${event.category || ''}
+                </div>
+
+                <div class="space-y-3">
+                    <div class="flex items-center gap-3">
+                        <span class="w-8 h-8 flex items-center justify-center bg-blue-50 rounded-full">
+                            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                            </svg>
+                        </span>
+                        <span class="text-gray-500">Дисциплина:</span>
+                        <span class="font-medium">${event.discipline || 'Не указано'}</span>
+                    </div>
+
+                    <div class="flex items-center gap-3">
+                        <span class="w-8 h-8 flex items-center justify-center bg-blue-50 rounded-full">
+                            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            </svg>
+                        </span>
+                        <span class="text-gray-500">Возрастная группа:</span>
+                        <span class="font-medium">${event.age_group || 'Не указано'}</span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mt-6 pt-6 border-t">
+                    <div class="flex items-center gap-3">
+                        <span class="w-8 h-8 flex items-center justify-center bg-gray-50 rounded-full">
+                            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                            </svg>
+                        </span>
+                        <div>
+                            <div class="text-sm text-gray-500">Даты проведения</div>
+                            <div>${event.start_date || ''} – ${event.end_date || ''}</div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-3">
+                        <span class="w-8 h-8 flex items-center justify-center bg-gray-50 rounded-full">
+                            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            </svg>
+                        </span>
+                        <div>
+                            <div class="text-sm text-gray-500">Место проведения</div>
+                            <div>${event.location_country || ''}, ${event.location_city || ''}, ${event.location_region || ''}</div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-3">
+                        <span class="w-8 h-8 flex items-center justify-center bg-gray-50 rounded-full">
+                            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/>
+                            </svg>
+                        </span>
+                        <div>
+                            <div class="text-sm text-gray-500">Номер ЕКП</div>
+                            <div>${event.ekp_number}</div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-3">
+                        <span class="w-8 h-8 flex items-center justify-center bg-gray-50 rounded-full">
+                            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            </svg>
+                        </span>
+                        <div>
+                            <div class="text-sm text-gray-500">Количество участников</div>
+                            <div>${event.participants_count || 'Не указано'}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        `;
+    };
 
     function updateMonthsDisplay() {
         const container = document.getElementById('monthsContainer');
@@ -134,9 +302,9 @@
             }`;
             monthDiv.onclick = () => selectMonth(monthIndex, year);
             monthDiv.innerHTML = `
-            <div class="font-medium">${months[monthIndex]}</div>
-            <div class="text-sm ${i === 0 ? 'text-blue-100' : 'text-gray-500'}">${year}</div>
-        `;
+                <div class="font-medium">${months[monthIndex]}</div>
+                <div class="text-sm ${i === 0 ? 'text-blue-100' : 'text-gray-500'}">${year}</div>
+            `;
             container.appendChild(monthDiv);
         }
     }
@@ -173,101 +341,82 @@
         await fetchEvents();
     }
 
-    // Рендеринг события
-    const renderEvent = (event) => {
-        return `
-    <div class="bg-white rounded-lg shadow-sm overflow-hidden">
-        <div class="p-6">
-            <div class="flex items-center mb-4">
-                <span class="bg-blue-500 text-white px-3 py-1 rounded-full text-sm">
-                    ${event.sport_type || 'Спорт'}
-                </span>
-            </div>
-
-            <h2 class="text-xl font-semibold text-gray-800 mb-4">${event.name}</h2>
-
-            <div class="text-gray-500 uppercase text-sm tracking-wide mb-4">
-                ${event.category || ''}
-            </div>
-
-            <div class="space-y-3">
-                <div class="flex items-center gap-3">
-                    <span class="w-8 h-8 flex items-center justify-center bg-blue-50 rounded-full">
-                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                        </svg>
-                    </span>
-                    <span class="text-gray-500">Дисциплина:</span>
-                    <span class="font-medium">${event.discipline || 'Не указано'}</span>
-                </div>
-
-                <div class="flex items-center gap-3">
-                    <span class="w-8 h-8 flex items-center justify-center bg-blue-50 rounded-full">
-                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
-                        </svg>
-                    </span>
-                    <span class="text-gray-500">Возрастная группа:</span>
-                    <span class="font-medium">${event.age_group || 'Не указано'}</span>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 pt-6 border-t">
-                <div class="flex items-center gap-3">
-                    <span class="w-8 h-8 flex items-center justify-center bg-gray-50 rounded-full">
-                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                        </svg>
-                    </span>
-                    ${event.start_date || ''} – ${event.end_date || ''}
-                </div>
-
-                <div class="flex items-center gap-3">
-                    <span class="w-8 h-8 flex items-center justify-center bg-gray-50 rounded-full">
-                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
-                        </svg>
-                    </span>
-                    ${event.location_country || ''}, ${event.location_city || ''}, ${event.location_region || ''}
-                </div>
-
-                <div class="flex items-center gap-3">
-                    <span class="w-8 h-8 flex items-center justify-center bg-gray-50 rounded-full">
-                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/>
-                        </svg>
-                    </span>
-                    № ЕКП: ${event.ekp_number}
-                </div>
-            </div>
-        </div>
-    </div>
-    `;
-    };
-
-
     // Обработка загрузки файла
     document.getElementById('uploadForm').onsubmit = async (e) => {
-        e.preventDefault();
-        const formData = new FormData(e.target);
+    e.preventDefault();
+    if (uploadInProgress) return;
 
-        try {
-            const response = await axios.post('/upload', formData);
-            alert(response.data.message);
-            fetchEvents();
-        } catch (error) {
-            alert(error.response?.data?.error || 'Ошибка загрузки');
+    const form = e.target;
+    const submitButton = form.querySelector('button[type="submit"]');
+    const formData = new FormData(form);
+    const uploadProgress = document.getElementById('uploadProgress');
+    const processingLog = document.getElementById('processingLog');
+
+    try {
+        uploadInProgress = true;
+        submitButton.disabled = true;
+        uploadProgress.classList.remove('hidden');
+        processingLog.classList.remove('hidden');
+        addLogEntry('Начало загрузки файла...');
+
+        console.log('Uploading file...'); // Добавим лог
+        const response = await axios.post('/upload', formData);
+        console.log('Upload response:', response.data); // Добавим лог
+
+        if (response.data.status === 'processing') {
+            console.log('Starting SSE connection...'); // Добавим лог
+            const eventSource = new EventSource('/parse-status');
+
+            eventSource.onmessage = (event) => {
+                console.log('SSE message received:', event.data); // Добавим лог
+                const status = JSON.parse(event.data);
+                updateProgress(status);
+                addLogEntry(status.message);
+
+                if (status.progress === 100) {
+                    console.log('Processing complete'); // Добавим лог
+                    eventSource.close();
+                    uploadInProgress = false;
+                    submitButton.disabled = false;
+                    fetchEvents();
+                    addLogEntry('Обработка файла успешно завершена', 'success');
+
+                    setTimeout(() => {
+                        uploadProgress.classList.add('hidden');
+                        processingLog.classList.add('hidden');
+                    }, 3000);
+                }
+            };
+
+            eventSource.onerror = (error) => {
+                console.error('SSE error:', error); // Добавим лог
+                eventSource.close();
+                addLogEntry('Ошибка при получении обновлений', 'error');
+                uploadInProgress = false;
+                submitButton.disabled = false;
+            };
+
+            // Добавим обработчик открытия соединения
+            eventSource.onopen = () => {
+                console.log('SSE connection opened'); // Добавим лог
+                addLogEntry('Соединение установлено');
+            };
         }
-    };
+    } catch (error) {
+        console.error('Upload error:', error); // Добавим лог
+        addLogEntry(`Ошибка: ${error.response?.data?.error || 'Неизвестная ошибка'}`, 'error');
+        uploadInProgress = false;
+        submitButton.disabled = false;
+    }
+};
 
     async function fetchUniqueSports() {
         try {
-            const response = await axios.get('/sports'); // Запрос на сервер
+            const response = await axios.get('/sports');
             const sports = response.data;
 
             const sportTypeSelect = document.getElementById('sportType');
-            sportTypeSelect.innerHTML = ''; // Очистка перед добавлением новых значений
+            sportTypeSelect.innerHTML = '';
 
             // Опция "Все виды спорта" по умолчанию
             const defaultOption = document.createElement('option');
@@ -289,11 +438,11 @@
 
     async function fetchUniqueRegions() {
         try {
-            const response = await axios.get('/regions'); // Запрос на сервер
+            const response = await axios.get('/regions');
             const regions = response.data;
 
             const regionSelect = document.getElementById('region');
-            regionSelect.innerHTML = ''; // Очистка перед добавлением новых значений
+            regionSelect.innerHTML = '';
 
             // Опция "Все регионы" по умолчанию
             const defaultOption = document.createElement('option');
@@ -312,16 +461,6 @@
             console.error('Ошибка при загрузке регионов:', error);
         }
     }
-
-    // Вызов функции после загрузки страницы
-
-
-    // Вызов функции после загрузки страницы
-    document.addEventListener('DOMContentLoaded', () => {
-        fetchUniqueSports(); // Загрузка видов спорта
-        fetchUniqueRegions(); // Загрузка регионов
-        fetchEvents();
-    });
 
     // Получение событий
     async function fetchEvents(resetPage = true) {
@@ -349,7 +488,7 @@
                 page: currentPage
             };
 
-            const response = await axios.get('/events', { params });
+            const response = await axios.get('/events', {params});
             const data = response.data;
 
             currentEvents = resetPage ? data.events : [...currentEvents, ...data.events];
@@ -376,23 +515,108 @@
         }
     }
 
-
     async function loadMore() {
         if (!hasNextPage || isLoading) return;
         currentPage++;
         await fetchEvents(false);
     }
 
+    // Обработчики событий для фильтров
     document.getElementById('sportType').addEventListener('change', () => fetchEvents(true));
     document.getElementById('region').addEventListener('change', () => fetchEvents(true));
     document.getElementById('startDate').addEventListener('change', () => fetchEvents(true));
     document.getElementById('endDate').addEventListener('change', () => fetchEvents(true));
 
-
-    // Инициализация
+    // Инициализация при загрузке страницы
     document.addEventListener('DOMContentLoaded', () => {
+        fetchUniqueSports();
+        fetchUniqueRegions();
         updateMonthsDisplay();
         fetchEventsByMonth(currentMonthIndex, currentYear);
     });
+</script>
+
+<script nonce="{{ csp_nonce() }}">
+let uploadInProgress = false;
+
+function addLogEntry(message, type = 'info') {
+    const logContent = document.getElementById('logContent');
+    const entry = document.createElement('div');
+    entry.className = `py-1 px-2 rounded ${
+        type === 'error' ? 'bg-red-50 text-red-700' :
+        type === 'success' ? 'bg-green-50 text-green-700' :
+        'bg-gray-50 text-gray-700'
+    }`;
+    entry.textContent = message;
+    logContent.appendChild(entry);
+    logContent.scrollTop = logContent.scrollHeight;
+}
+
+function updateProgress(status) {
+    const progressBar = document.getElementById('progressBar');
+    const progressStatus = document.getElementById('progressStatus');
+    const progressPercentage = document.getElementById('progressPercentage');
+    const pageStatus = document.getElementById('pageStatus');
+
+    progressBar.style.width = `${status.progress}%`;
+    progressStatus.textContent = status.message;
+    progressPercentage.textContent = `${Math.round(status.progress)}%`;
+    pageStatus.textContent = `Страница: ${status.current_page}/${status.total_pages}`;
+}
+
+document.getElementById('uploadForm').onsubmit = async (e) => {
+    e.preventDefault();
+    if (uploadInProgress) return;
+
+    const form = e.target;
+    const submitButton = form.querySelector('button[type="submit"]');
+    const formData = new FormData(form);
+    const uploadProgress = document.getElementById('uploadProgress');
+    const processingLog = document.getElementById('processingLog');
+
+    try {
+        uploadInProgress = true;
+        submitButton.disabled = true;
+        uploadProgress.classList.remove('hidden');
+        processingLog.classList.remove('hidden');
+        addLogEntry('Начало загрузки файла...');
+
+        const response = await axios.post('/upload', formData);
+
+        if (response.data.status === 'processing') {
+            const eventSource = new EventSource('/parse-status');
+
+            eventSource.onmessage = (event) => {
+                const status = JSON.parse(event.data);
+                updateProgress(status);
+                addLogEntry(status.message);
+
+                if (status.progress === 100) {
+                    eventSource.close();
+                    uploadInProgress = false;
+                    submitButton.disabled = false;
+                    fetchEvents();
+                    addLogEntry('Обработка файла успешно завершена', 'success');
+
+                    setTimeout(() => {
+                        uploadProgress.classList.add('hidden');
+                        processingLog.classList.add('hidden');
+                    }, 3000);
+                }
+            };
+
+            eventSource.onerror = () => {
+                eventSource.close();
+                addLogEntry('Ошибка при получении обновлений', 'error');
+                uploadInProgress = false;
+                submitButton.disabled = false;
+            };
+        }
+    } catch (error) {
+        addLogEntry(`Ошибка: ${error.response?.data?.error || 'Неизвестная ошибка'}`, 'error');
+        uploadInProgress = false;
+        submitButton.disabled = false;
+    }
+};
 </script>
 {% endblock %}

@@ -3,6 +3,11 @@ from datetime import timedelta
 
 
 class Config:
+
+
+    ADMIN_USERNAME = 'admin'
+    ADMIN_EMAIL = 'admin@example.com'
+    ADMIN_PASSWORD = 'admin123'
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-key-please-change'
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///sports_calendar.db'
     SQLALCHEMY_TRACK_MODIFICATIONS = False

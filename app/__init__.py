@@ -2,8 +2,8 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_caching import Cache
-from config import Config
 import os
+from config import Config
 
 db = SQLAlchemy()
 migrate = Migrate()
@@ -24,5 +24,9 @@ def create_app(config_class=Config):
 
     # Create upload folder
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+    # Create tables if not exist
+    with app.app_context():
+        db.create_all()
 
     return app

@@ -8,6 +8,7 @@ import pdfplumber
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 class PDFParser:
     COUNTRIES = [
         'РОССИЯ', 'УЗБЕКИСТАН', 'КАЗАХСТАН', 'БЕЛАРУСЬ', 'КЫРГЫЗСТАН',
@@ -59,6 +60,29 @@ class PDFParser:
         "Чукотский автономный округ", "Ямало-Ненецкий автономный округ"
     ]
 
+    def __init__(self):
+        self.total_pages = 0
+        self.current_page = 0
+        self.processed_events = 0
+        self.total_events = 0
+        self.status_callback = None
+
+    def set_status_callback(self, callback):
+        """Установка callback-функции для отправки статуса"""
+        self.status_callback = callback
+
+    def update_status(self, message, progress):
+        """Обновление статуса обработки"""
+        if self.status_callback:
+            self.status_callback({
+                'message': message,
+                'progress': progress,
+                'current_page': self.current_page,
+                'total_pages': self.total_pages,
+                'processed_events': self.processed_events,
+                'total_events': self.total_events
+            })
+
     @staticmethod
     def _extract_sport_type(block):
         """Извлекает вид спорта перед фразой 'Основной состав'."""
@@ -67,21 +91,16 @@ class PDFParser:
 
     @staticmethod
     def _extract_discipline(full_text):
-        """
-        Извлекает дисциплины из текста. Учитывает только последовательности с английскими символами и дефисами.
-        """
-        # Извлечение дисциплин в формате "F-1A, F-1B, F-1C"
+        """Извлекает дисциплины из текста."""
         discipline_matches = re.findall(r'\b([A-Z][A-Z0-9-]+(?:,?\s?))+', full_text)
         disciplines = set()
         for match in discipline_matches:
             cleaned = match.replace(" ", "").replace(",", ", ").strip(", ")
-            if re.match(r'^[A-Z0-9-]+$', cleaned):  # Убедимся, что это корректный формат
+            if re.match(r'^[A-Z0-9-]+$', cleaned):
                 disciplines.add(cleaned)
         return ", ".join(sorted(disciplines)) if disciplines else None
 
-    @staticmethod
-    def _parse_event_block(block, sport_type):
-        """Парсит отдельный блок мероприятия."""
+    def _parse_event_block(self, block, sport_type):
         try:
             logger.info(f"Parsing block:\n{block}\n{'-' * 50}")
             full_text = " ".join(line.strip() for line in block.split('\n') if line.strip())
@@ -103,22 +122,17 @@ class PDFParser:
             start_date = datetime.strptime(dates[0], '%d.%m.%Y') if dates else None
             end_date = datetime.strptime(dates[1], '%d.%m.%Y') if len(dates) > 1 else None
 
-            # Поиск возраста и группы
-            age_group = None
-            if len(dates) > 1:
-                age_group_match = re.search(
-                    fr'(женщины|мужчины|девушки|юноши|юниоры|юниорки)[^,]*(?:от\s+\d+\s+лет\s*(?:и\s*старше)?)?.*?(?={dates[1]})',
-                    full_text
-                )
-                if age_group_match:
-                    age_group = age_group_match.group(0).strip()
-
-            # Поиск страны
-            location_country = next((c for c in PDFParser.COUNTRIES if c in full_text), None)
+            # Поиск страны и количества участников
+            country_participants_match = re.search(
+                r'(РОССИЯ|УЗБЕКИСТАН|КАЗАХСТАН|БЕЛАРУСЬ|КЫРГЫЗСТАН|ТАДЖИКИСТАН|ТУРКМЕНИСТАН|АРМЕНИЯ|АЗЕРБАЙДЖАН|ГРУЗИЯ)\s+(\d+)\s+',
+                full_text)
+            location_country = country_participants_match.group(1) if country_participants_match else None
+            participants_count = int(country_participants_match.group(2)) if country_participants_match else None
 
             # Поиск региона
-            location_region = next((s for s in PDFParser.SUBJECTS_RF if s.upper() in full_text.upper()), None)
+            location_region = next((s for s in self.SUBJECTS_RF if s.upper() in full_text.upper()), None)
 
+            # Поиск города
             city_match = re.search(
                 r'г\.\s*([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*(?:\s+[А-ЯЁ][а-яё]+)?)', full_text
             )
@@ -126,8 +140,18 @@ class PDFParser:
             if city_match:
                 location_city = city_match.group(1).replace("\n", " ").strip()
 
+            # Поиск возрастной группы
+            age_group = None
+            if country_participants_match:
+                age_group_match = re.search(
+                    fr'{country_participants_match.group(2)}\s+(.*?)(?={dates[1]}|$)',
+                    full_text
+                )
+                if age_group_match:
+                    age_group = age_group_match.group(1).strip()
+
             # Извлечение дисциплин
-            discipline = PDFParser._extract_discipline(full_text)
+            discipline = self._extract_discipline(full_text)
 
             # Формирование данных мероприятия
             event_data = {
@@ -140,7 +164,7 @@ class PDFParser:
                 'location_country': location_country,
                 'location_region': location_region,
                 'location_city': location_city,
-                'participants_count': None,
+                'participants_count': participants_count,
                 'age_group': age_group
             }
 
@@ -151,42 +175,7 @@ class PDFParser:
             logger.error(f"Error parsing block: {str(e)}\nBlock: {block}")
             return None
 
-    @staticmethod
-    def parse_pdf(file_path):
-        logger.info(f"Starting to parse PDF: {file_path}")
-        processed_ekp = set()
-        current_sport_type = None  # Текущий вид спорта
-
-        with pdfplumber.open(file_path) as pdf:
-            for page_num, page in enumerate(pdf.pages, 1):
-                text = page.extract_text()
-
-                # Разбиваем текст на блоки по номерам
-                event_blocks = re.split(r'(?=\d{13})', text)
-
-                for block in event_blocks:
-                    if not block.strip():
-                        continue
-
-                    # Если вид спорта указан перед "Основной состав", обновляем текущий
-                    new_sport_type = PDFParser._extract_sport_type(block)
-                    if new_sport_type:
-                        current_sport_type = new_sport_type
-                        logger.info(f"Detected sport type: {current_sport_type}")
-
-                    try:
-                        ekp_match = re.search(r'(\d{13})', block)
-                        if ekp_match and ekp_match.group(1) not in processed_ekp:
-                            event = PDFParser._parse_event_block(block, current_sport_type)
-                            if event:
-                                PDFParser._save_event(event)
-                                processed_ekp.add(ekp_match.group(1))
-                                logger.info(f"Successfully processed event: {event.ekp_number}")
-                    except Exception as e:
-                        logger.error(f"Failed to process block: {str(e)}")
-
-    @staticmethod
-    def _save_event(event):
+    def _save_event(self, event):
         try:
             existing = Event.query.filter_by(ekp_number=event.ekp_number).first()
             if not existing:
@@ -199,3 +188,62 @@ class PDFParser:
             db.session.rollback()
             logger.error(f"❌ Database error: {str(e)}")
             raise
+
+    def parse_pdf(self, file_path):
+        """Основной метод парсинга PDF файла"""
+        logger.info(f"Starting to parse PDF: {file_path}")
+        processed_ekp = set()
+        current_sport_type = None
+        pdf = None
+
+        try:
+            pdf = pdfplumber.open(file_path)
+            self.total_pages = len(pdf.pages)
+            self.update_status(f"Всего страниц: {self.total_pages}", 0)
+
+            # Обработка страниц
+            for page_num, page in enumerate(pdf.pages, 1):
+                self.current_page = page_num
+                text = page.extract_text()
+                event_blocks = re.split(r'(?=\d{13})', text)
+
+                # Вычисляем прогресс на основе обработанных страниц
+                progress = (page_num / self.total_pages) * 100
+                self.update_status(
+                    f"Обработка страницы {page_num} из {self.total_pages}",
+                    progress
+                )
+
+                for block in event_blocks:
+                    if not block.strip():
+                        continue
+
+                    new_sport_type = self._extract_sport_type(block)
+                    if new_sport_type:
+                        current_sport_type = new_sport_type
+
+                    try:
+                        ekp_match = re.search(r'(\d{13})', block)
+                        if ekp_match and ekp_match.group(1) not in processed_ekp:
+                            event = self._parse_event_block(block, current_sport_type)
+                            if event:
+                                self._save_event(event)
+                                processed_ekp.add(ekp_match.group(1))
+                                self.processed_events += 1
+
+                    except Exception as e:
+                        logger.error(f"Failed to process block: {str(e)}")
+
+            self.update_status(
+                f"Обработка завершена. Обработано {self.processed_events} событий",
+                100
+            )
+
+        except Exception as e:
+            logger.error(f"Error processing PDF: {str(e)}")
+            self.update_status(f"Ошибка обработки файла: {str(e)}", 0)
+            raise
+
+        finally:
+            if pdf:
+                pdf.close()
