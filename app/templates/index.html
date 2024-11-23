@@ -1,65 +1,193 @@
 {% extends "base.html" %}
 
 {% block content %}
+<!-- Загрузка PDF -->
 <div class="mb-8">
-    <form id="uploadForm" class="bg-white rounded-lg shadow-sm p-6">
+    <form class="bg-white rounded-lg shadow-sm p-6" id="uploadForm">
         <h2 class="text-lg font-semibold mb-4">Загрузить PDF</h2>
         <div class="flex gap-4">
-            <input type="file" name="file" accept=".pdf" required 
-                   class="block w-full text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-            <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+            <input accept=".pdf"
+                   class="block w-full text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                   name="file" required
+                   type="file">
+            <button class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700" type="submit">
                 Загрузить
             </button>
         </div>
     </form>
 </div>
 
+<!-- Месячный слайдер -->
+<div class="bg-white rounded-lg shadow-sm p-6 mb-8">
+    <div class="flex justify-between items-center">
+        <button class="p-2 hover:bg-gray-100 rounded-full" onclick="changeMonth(-1)">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/>
+            </svg>
+        </button>
+
+        <div class="flex-1 overflow-hidden">
+            <div class="flex justify-center gap-4 transition-transform duration-300" id="monthsContainer">
+                <!-- Месяцы будут добавлены через JavaScript -->
+            </div>
+        </div>
+
+        <button class="p-2 hover:bg-gray-100 rounded-full" onclick="changeMonth(1)">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/>
+            </svg>
+        </button>
+    </div>
+</div>
+
+<!-- Фильтры -->
 <div class="bg-white rounded-lg shadow-sm p-6 mb-8">
     <h2 class="text-lg font-semibold mb-4">Фильтры</h2>
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Вид спорта</label>
-            <input type="text" id="sportType" class="w-full rounded-lg border border-gray-300 px-3 py-2">
+            <select class="w-full rounded-lg border border-gray-300 px-3 py-2" id="sportType">
+                <!-- Опции будут добавлены через JavaScript -->
+            </select>
         </div>
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Регион</label>
-            <input type="text" id="region" class="w-full rounded-lg border border-gray-300 px-3 py-2">
+            <select class="w-full rounded-lg border border-gray-300 px-3 py-2" id="region">
+                <!-- Опции будут добавлены через JavaScript -->
+            </select>
         </div>
+
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Начало</label>
-            <input type="date" id="startDate" class="w-full rounded-lg border border-gray-300 px-3 py-2">
+            <input class="w-full rounded-lg border border-gray-300 px-3 py-2" id="startDate" type="date">
         </div>
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Конец</label>
-            <input type="date" id="endDate" class="w-full rounded-lg border border-gray-300 px-3 py-2">
+            <input class="w-full rounded-lg border border-gray-300 px-3 py-2" id="endDate" type="date">
         </div>
     </div>
     <div class="mt-4">
-        <button onclick="fetchEvents()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+        <button class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700" onclick="fetchEvents()">
             Применить фильтры
         </button>
     </div>
+    <div class="mt-4 text-gray-700">
+        <span id="eventCount">Загружено 0 записей</span>
+    </div>
 </div>
 
-<div id="eventsList" class="space-y-4"></div>
+
+<!-- Список событий -->
+<div class="space-y-4" id="eventsList"></div>
+
+<div class="hidden" id="loader">
+    <div class="flex justify-center items-center py-8">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+    </div>
+</div>
+
+<!-- Кнопка "Показать еще" -->
+<div class="hidden text-center py-8" id="loadMoreContainer">
+    <button class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700" onclick="loadMore()">
+        Показать еще
+    </button>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-const renderEvent = (event) => {
-    return `
+
+    let currentPage = 1;
+    let hasNextPage = false;
+    let isLoading = false;
+    let currentEvents = [];
+    // Управление месяцами
+    const months = [
+        'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+        'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+    ];
+
+    let currentMonthIndex = new Date().getMonth();
+    let currentYear = new Date().getFullYear();
+
+    function updateMonthsDisplay() {
+        const container = document.getElementById('monthsContainer');
+        container.innerHTML = '';
+
+        for (let i = -2; i <= 2; i++) {
+            let monthIndex = currentMonthIndex + i;
+            let year = currentYear;
+
+            if (monthIndex < 0) {
+                monthIndex += 12;
+                year--;
+            } else if (monthIndex > 11) {
+                monthIndex -= 12;
+                year++;
+            }
+
+            const monthDiv = document.createElement('div');
+            monthDiv.className = `text-center cursor-pointer px-6 py-3 rounded-lg transition-colors ${
+                i === 0
+                    ? 'bg-blue-500 text-white'
+                    : 'hover:bg-gray-100'
+            }`;
+            monthDiv.onclick = () => selectMonth(monthIndex, year);
+            monthDiv.innerHTML = `
+            <div class="font-medium">${months[monthIndex]}</div>
+            <div class="text-sm ${i === 0 ? 'text-blue-100' : 'text-gray-500'}">${year}</div>
+        `;
+            container.appendChild(monthDiv);
+        }
+    }
+
+    function changeMonth(direction) {
+        currentMonthIndex += direction;
+
+        if (currentMonthIndex > 11) {
+            currentMonthIndex = 0;
+            currentYear++;
+        } else if (currentMonthIndex < 0) {
+            currentMonthIndex = 11;
+            currentYear--;
+        }
+
+        updateMonthsDisplay();
+        fetchEventsByMonth(currentMonthIndex, currentYear);
+    }
+
+    function selectMonth(monthIndex, year) {
+        currentMonthIndex = monthIndex;
+        currentYear = year;
+        updateMonthsDisplay();
+        fetchEventsByMonth(monthIndex, year);
+    }
+
+    async function fetchEventsByMonth(month, year) {
+        const startDate = new Date(year, month, 1);
+        const endDate = new Date(year, month + 1, 0);
+
+        document.getElementById('startDate').value = startDate.toISOString().split('T')[0];
+        document.getElementById('endDate').value = endDate.toISOString().split('T')[0];
+
+        await fetchEvents();
+    }
+
+    // Рендеринг события
+    const renderEvent = (event) => {
+        return `
     <div class="bg-white rounded-lg shadow-sm overflow-hidden">
         <div class="p-6">
             <div class="flex items-center mb-4">
                 <span class="bg-blue-500 text-white px-3 py-1 rounded-full text-sm">
-                    ${event.event_type || 'Физкультурные'}
+                    ${event.sport_type || 'Спорт'}
                 </span>
             </div>
 
             <h2 class="text-xl font-semibold text-gray-800 mb-4">${event.name}</h2>
 
             <div class="text-gray-500 uppercase text-sm tracking-wide mb-4">
-                ВСЕРОССИЙСКИЕ ФИЗКУЛЬТУРНЫЕ МЕРОПРИЯТИЯ
+                ${event.category || ''}
             </div>
 
             <div class="space-y-3">
@@ -69,8 +197,8 @@ const renderEvent = (event) => {
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                         </svg>
                     </span>
-                    <span class="text-gray-500">Вид спорта:</span>
-                    <span class="font-medium">${event.sport_type}</span>
+                    <span class="text-gray-500">Дисциплина:</span>
+                    <span class="font-medium">${event.discipline || 'Не указано'}</span>
                 </div>
 
                 <div class="flex items-center gap-3">
@@ -91,7 +219,7 @@ const renderEvent = (event) => {
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                         </svg>
                     </span>
-                    ${event.start_date} – ${event.end_date}
+                    ${event.start_date || ''} – ${event.end_date || ''}
                 </div>
 
                 <div class="flex items-center gap-3">
@@ -101,8 +229,7 @@ const renderEvent = (event) => {
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
                         </svg>
                     </span>
-                    ${event.location.city !== 'Не указано' ? event.location.city : ''}
-${event.location.region !== 'Не указано' ? event.location.region : 'Не указано'}
+                    ${event.location_country || ''}, ${event.location_city || ''}, ${event.location_region || ''}
                 </div>
 
                 <div class="flex items-center gap-3">
@@ -117,39 +244,155 @@ ${event.location.region !== 'Не указано' ? event.location.region : 'Н�
         </div>
     </div>
     `;
-};
-
-document.getElementById('uploadForm').onsubmit = async (e) => {
-    e.preventDefault();
-    const formData = new FormData(e.target);
-    
-    try {
-        const response = await axios.post('/upload', formData);
-        alert(response.data.message);
-        fetchEvents();
-    } catch (error) {
-        alert(error.response?.data?.error || 'Ошибка загрузки');
-    }
-};
-
-async function fetchEvents() {
-    const params = {
-        sport_type: document.getElementById('sportType').value,
-        region: document.getElementById('region').value,
-        start_date: document.getElementById('startDate').value,
-        end_date: document.getElementById('endDate').value
     };
 
-    try {
-        const response = await axios.get('/events', { params });
-        const eventsList = document.getElementById('eventsList');
-        eventsList.innerHTML = response.data.map(event => renderEvent(event)).join('');
-    } catch (error) {
-        alert('Ошибка получения данных');
-    }
-}
 
-// Initial load
-fetchEvents();
+    // Обработка загрузки файла
+    document.getElementById('uploadForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+
+        try {
+            const response = await axios.post('/upload', formData);
+            alert(response.data.message);
+            fetchEvents();
+        } catch (error) {
+            alert(error.response?.data?.error || 'Ошибка загрузки');
+        }
+    };
+
+    async function fetchUniqueSports() {
+        try {
+            const response = await axios.get('/sports'); // Запрос на сервер
+            const sports = response.data;
+
+            const sportTypeSelect = document.getElementById('sportType');
+            sportTypeSelect.innerHTML = ''; // Очистка перед добавлением новых значений
+
+            // Опция "Все виды спорта" по умолчанию
+            const defaultOption = document.createElement('option');
+            defaultOption.value = '';
+            defaultOption.textContent = 'Все виды спорта';
+            sportTypeSelect.appendChild(defaultOption);
+
+            // Добавление уникальных видов спорта
+            sports.forEach((sport) => {
+                const option = document.createElement('option');
+                option.value = sport;
+                option.textContent = sport;
+                sportTypeSelect.appendChild(option);
+            });
+        } catch (error) {
+            console.error('Ошибка при загрузке видов спорта:', error);
+        }
+    }
+
+    async function fetchUniqueRegions() {
+        try {
+            const response = await axios.get('/regions'); // Запрос на сервер
+            const regions = response.data;
+
+            const regionSelect = document.getElementById('region');
+            regionSelect.innerHTML = ''; // Очистка перед добавлением новых значений
+
+            // Опция "Все регионы" по умолчанию
+            const defaultOption = document.createElement('option');
+            defaultOption.value = '';
+            defaultOption.textContent = 'Все регионы';
+            regionSelect.appendChild(defaultOption);
+
+            // Добавление уникальных регионов
+            regions.forEach((region) => {
+                const option = document.createElement('option');
+                option.value = region;
+                option.textContent = region;
+                regionSelect.appendChild(option);
+            });
+        } catch (error) {
+            console.error('Ошибка при загрузке регионов:', error);
+        }
+    }
+
+    // Вызов функции после загрузки страницы
+
+
+    // Вызов функции после загрузки страницы
+    document.addEventListener('DOMContentLoaded', () => {
+        fetchUniqueSports(); // Загрузка видов спорта
+        fetchUniqueRegions(); // Загрузка регионов
+        fetchEvents();
+    });
+
+    // Получение событий
+    async function fetchEvents(resetPage = true) {
+        if (isLoading) return;
+
+        if (resetPage) {
+            currentPage = 1;
+            currentEvents = [];
+            document.getElementById('eventsList').innerHTML = '';
+        }
+
+        const loader = document.getElementById('loader');
+        const loadMoreContainer = document.getElementById('loadMoreContainer');
+
+        try {
+            isLoading = true;
+            loader.classList.remove('hidden');
+            loadMoreContainer.classList.add('hidden');
+
+            const params = {
+                sport_type: document.getElementById('sportType').value,
+                region: document.getElementById('region').value,
+                start_date: document.getElementById('startDate').value,
+                end_date: document.getElementById('endDate').value,
+                page: currentPage
+            };
+
+            const response = await axios.get('/events', { params });
+            const data = response.data;
+
+            currentEvents = resetPage ? data.events : [...currentEvents, ...data.events];
+            hasNextPage = data.has_next;
+
+            // Обновляем список событий
+            const eventsList = document.getElementById('eventsList');
+            eventsList.innerHTML = currentEvents.map(renderEvent).join('');
+
+            // Обновляем количество событий
+            const eventCount = document.getElementById('eventCount');
+            eventCount.textContent = `Найдено записей: ${data.total}`;
+
+            // Показываем/скрываем кнопку "Показать еще"
+            loadMoreContainer.classList.toggle('hidden', !hasNextPage);
+
+        } catch (error) {
+            console.error('Ошибка при получении событий:', error);
+            const eventCount = document.getElementById('eventCount');
+            eventCount.textContent = 'Ошибка загрузки событий';
+        } finally {
+            isLoading = false;
+            loader.classList.add('hidden');
+        }
+    }
+
+
+    async function loadMore() {
+        if (!hasNextPage || isLoading) return;
+        currentPage++;
+        await fetchEvents(false);
+    }
+
+    document.getElementById('sportType').addEventListener('change', () => fetchEvents(true));
+    document.getElementById('region').addEventListener('change', () => fetchEvents(true));
+    document.getElementById('startDate').addEventListener('change', () => fetchEvents(true));
+    document.getElementById('endDate').addEventListener('change', () => fetchEvents(true));
+
+
+    // Инициализация
+    document.addEventListener('DOMContentLoaded', () => {
+        updateMonthsDisplay();
+        fetchEventsByMonth(currentMonthIndex, currentYear);
+    });
 </script>
 {% endblock %}

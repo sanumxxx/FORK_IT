@@ -46,13 +46,15 @@ class Event(db.Model):
             'event_type': self.event_type,
             'category': self.category,
             'sport_type': self.sport_type,
+            'discipline': self.discipline,
+            'program': self.program,
             'start_date': self.start_date.strftime('%d.%m.%Y'),
             'end_date': self.end_date.strftime('%d.%m.%Y'),
-            'location': {
-                'country': self.location_country,
-                'region': self.location_region,
-                'city': self.location_city,
-                'venue': self.venue
-            },
-            'age_group': self.age_group
+            'location_country': self.location_country,  # Плоское поле
+            'location_region': self.location_region,
+            'location_city': self.location_city,
+            'venue': self.venue,
+            'participants_count': self.participants_count,
+            'gender': self.gender,
+            'age_group': self.age_group,
         }

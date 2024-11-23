@@ -1,233 +1,192 @@
-
-from transformers import pipeline, AutoTokenizer
-from app.models.event import Event
-from app import db
-import pdfplumber
 import re
 from datetime import datetime
 import logging
-import torch
+from app.models.event import Event
+from app import db
+import pdfplumber
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-class SmartParser:
-    def __init__(self):
-        try:
-            self.tokenizer = AutoTokenizer.from_pretrained("DeepPavlov/rubert-base-cased")
-            self.ner = pipeline(
-                "ner",
-                model="DeepPavlov/rubert-base-cased",
-                tokenizer=self.tokenizer,
-                aggregation_strategy="simple"
-            )
-            logger.info("Neural parser initialized successfully")
-        except Exception as e:
-            logger.error(f"Error initializing SmartParser: {e}")
-            raise
-
-    def parse_location(self, text):
-        try:
-            entities = self.ner(text)
-            locations = [e['word'] for e in entities if e['entity_group'] in ['LOC', 'ORG']]
-
-            if "ПО МЕСТУ НАХОЖДЕНИЯ УЧАСТНИКОВ" in text:
-                return "ПО МЕСТУ НАХОЖДЕНИЯ УЧАСТНИКОВ", "ПО МЕСТУ НАХОЖДЕНИЯ УЧАСТНИКОВ"
-
-            if locations:
-                region = city = 'Не указано'
-                for loc in locations:
-                    if any(x in loc for x in ['ОБЛАСТЬ', 'РЕСПУБЛИКА', 'КРАЙ', 'ОКРУГ']):
-                        region = loc
-                    elif 'г.' in loc or 'город' in loc.lower():
-                        city = loc.replace('г.', '').strip()
-
-                return region, city
-            return 'Не указано', 'Не указано'
-        except Exception as e:
-            logger.error(f"Error in parse_location: {e}")
-            return 'Не указано', 'Не указано'
-
-    def parse_age_group(self, text):
-        try:
-            age_parts = []
-
-            # Поиск категорий участников
-            categories = re.findall(r'(женщины|мужчины|девушки|юноши)', text, re.IGNORECASE)
-            if categories:
-                age_parts.extend(categories)
-
-            # Поиск возрастных ограничений
-            age_match = re.search(r'от\s+(\d+)\s+лет\s*(?:и\s*старше)?', text)
-            if age_match:
-                age_parts.append(f"от {age_match.group(1)} лет и старше")
-
-            return ', '.join(age_parts) if age_parts else 'Не указано'
-        except Exception as e:
-            logger.error(f"Error in parse_age_group: {e}")
-            return 'Не указано'
-
-
 class PDFParser:
-    def __init__(self):
-        self.smart_parser = SmartParser()
+    COUNTRIES = [
+        'РОССИЯ', 'УЗБЕКИСТАН', 'КАЗАХСТАН', 'БЕЛАРУСЬ', 'КЫРГЫЗСТАН',
+        'ТАДЖИКИСТАН', 'ТУРКМЕНИСТАН', 'АРМЕНИЯ', 'АЗЕРБАЙДЖАН', 'ГРУЗИЯ'
+    ]
 
-    def _parse_event_block(self, block):
+    SUBJECTS_RF = [
+        # Республики
+        "Республика Адыгея", "Республика Алтай", "Республика Башкортостан",
+        "Республика Бурятия", "Республика Дагестан", "Донецкая Народная Республика",
+        "Республика Ингушетия", "Кабардино-Балкарская Республика", "Республика Калмыкия",
+        "Карачаево-Черкесская Республика", "Республика Карелия", "Республика Коми",
+        "Луганская Народная Республика", "Республика Марий Эл", "Республика Мордовия",
+        "Республика Саха (Якутия)", "Республика Северная Осетия — Алания", "Республика Татарстан",
+        "Республика Тыва", "Удмуртская Республика", "Республика Хакасия", "Чеченская Республика",
+        "Чувашская Республика", "Республика Крым",
+
+        # Края
+        "Алтайский край", "Забайкальский край", "Камчатский край", "Краснодарский край",
+        "Красноярский край", "Пермский край", "Приморский край", "Ставропольский край",
+        "Хабаровский край",
+
+        # Области
+        "Амурская область", "Архангельская область", "Астраханская область",
+        "Белгородская область", "Брянская область", "Владимирская область",
+        "Волгоградская область", "Вологодская область", "Воронежская область",
+        "Ивановская область", "Иркутская область", "Калининградская область",
+        "Калужская область", "Кемеровская область", "Кировская область",
+        "Костромская область", "Курганская область", "Курская область",
+        "Ленинградская область", "Липецкая область", "Магаданская область",
+        "Московская область", "Мурманская область", "Нижегородская область",
+        "Новгородская область", "Новосибирская область", "Омская область",
+        "Оренбургская область", "Орловская область", "Пензенская область",
+        "Псковская область", "Ростовская область", "Рязанская область",
+        "Самарская область", "Саратовская область", "Сахалинская область",
+        "Свердловская область", "Смоленская область", "Тамбовская область",
+        "Тверская область", "Томская область", "Тульская область",
+        "Тюменская область", "Ульяновская область", "Челябинская область",
+        "Ярославская область", "Запорожская область", "Херсонская область",
+
+        # Города федерального значения
+        "Город Москва", "Город Санкт-Петербург", "Город Севастополь",
+
+        # Автономная область
+        "Еврейская автономная область",
+
+        # Автономные округа
+        "Ненецкий автономный округ", "Ханты-Мансийский автономный округ — Югра",
+        "Чукотский автономный округ", "Ямало-Ненецкий автономный округ"
+    ]
+
+    @staticmethod
+    def _extract_sport_type(block):
+        """Извлекает вид спорта перед фразой 'Основной состав'."""
+        match = re.search(r'^([А-ЯЁ\s]+)\nОсновной состав', block, re.MULTILINE)
+        return match.group(1).strip() if match else None
+
+    @staticmethod
+    def _extract_discipline(full_text):
+        """
+        Извлекает дисциплины из текста. Учитывает только последовательности с английскими символами и дефисами.
+        """
+        # Извлечение дисциплин в формате "F-1A, F-1B, F-1C"
+        discipline_matches = re.findall(r'\b([A-Z][A-Z0-9-]+(?:,?\s?))+', full_text)
+        disciplines = set()
+        for match in discipline_matches:
+            cleaned = match.replace(" ", "").replace(",", ", ").strip(", ")
+            if re.match(r'^[A-Z0-9-]+$', cleaned):  # Убедимся, что это корректный формат
+                disciplines.add(cleaned)
+        return ", ".join(sorted(disciplines)) if disciplines else None
+
+    @staticmethod
+    def _parse_event_block(block, sport_type):
+        """Парсит отдельный блок мероприятия."""
         try:
-            logger.info(f"\nParsing block:\n{block}\n{'-' * 50}")
-            lines = [line.strip() for line in block.split('\n') if line.strip()]
-            full_text = " ".join(lines)
+            logger.info(f"Parsing block:\n{block}\n{'-' * 50}")
+            full_text = " ".join(line.strip() for line in block.split('\n') if line.strip())
+            logger.info(f"Full text for processing: {full_text}")
 
-            # Базовый парсинг
-            event_data = self._basic_parsing(full_text)
+            # Поиск EKP номера
+            ekp_match = re.search(r'(\d{13})', full_text)
+            ekp_number = ekp_match.group(1) if ekp_match else None
 
-            # Улучшение результатов с помощью нейронной модели
-            if self._needs_neural_enhancement(event_data):
-                self._enhance_with_neural(event_data, full_text)
+            # Поиск названия мероприятия
+            name_match = re.search(
+                r'(ЧЕМПИОНАТ|ВСЕРОССИЙСКИЕ СОРЕВНОВАНИЯ|КУБОК РОССИИ|МЕЖДУНАРОДНЫЕ СОРЕВНОВАНИЯ|[А-ЯЁ\s]{5,})',
+                full_text
+            )
+            event_name = name_match.group(0).strip() if name_match else 'Неизвестное мероприятие'
 
-            logger.info(f"Parsed data: {event_data}")
-            return Event(**event_data) if self._validate_results(event_data) else None
+            # Поиск всех дат
+            dates = re.findall(r'(\d{2}\.\d{2}\.\d{4})', full_text)
+            start_date = datetime.strptime(dates[0], '%d.%m.%Y') if dates else None
+            end_date = datetime.strptime(dates[1], '%d.%m.%Y') if len(dates) > 1 else None
+
+            # Поиск возраста и группы
+            age_group = None
+            if len(dates) > 1:
+                age_group_match = re.search(
+                    fr'(женщины|мужчины|девушки|юноши|юниоры|юниорки)[^,]*(?:от\s+\d+\s+лет\s*(?:и\s*старше)?)?.*?(?={dates[1]})',
+                    full_text
+                )
+                if age_group_match:
+                    age_group = age_group_match.group(0).strip()
+
+            # Поиск страны
+            location_country = next((c for c in PDFParser.COUNTRIES if c in full_text), None)
+
+            # Поиск региона
+            location_region = next((s for s in PDFParser.SUBJECTS_RF if s.upper() in full_text.upper()), None)
+
+            city_match = re.search(
+                r'г\.\s*([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)*(?:\s+[А-ЯЁ][а-яё]+)?)', full_text
+            )
+            location_city = None
+            if city_match:
+                location_city = city_match.group(1).replace("\n", " ").strip()
+
+            # Извлечение дисциплин
+            discipline = PDFParser._extract_discipline(full_text)
+
+            # Формирование данных мероприятия
+            event_data = {
+                'ekp_number': ekp_number,
+                'name': event_name,
+                'sport_type': sport_type,
+                'discipline': discipline,
+                'start_date': start_date,
+                'end_date': end_date,
+                'location_country': location_country,
+                'location_region': location_region,
+                'location_city': location_city,
+                'participants_count': None,
+                'age_group': age_group
+            }
+
+            logger.info(f"Parsed Event Data: {event_data}")
+            return Event(**event_data)
 
         except Exception as e:
             logger.error(f"Error parsing block: {str(e)}\nBlock: {block}")
             return None
 
-    def _basic_parsing(self, text):
-        """Базовый парсинг на основе регулярных выражений"""
-        try:
-            # EKP номер
-            ekp_match = re.search(r'(\d{13})', text)
-
-            # Название мероприятия
-            name_match = re.search(
-                r'(ЧЕМПИОНАТ|ВСЕРОССИЙСКИЕ СОРЕВНОВАНИЯ|КУБОК РОССИИ(?:\s*-\s*\d+(?:-[ЫИЙ])?\s*ЭТАП)?(?:\s*СЕЗОН\s*\d{4}-\d{4}\s*ГГ\.)?|ПЕРВЕНСТВО|СПАРТАКИАДА|ТУРНИР|ИГРЫ|ОЛИМПИАДА|ФЕСТИВАЛЬ|МЕЖРЕГИОНАЛЬНЫЕ СОРЕВНОВАНИЯ)([^0-9]+)?',
-                text
-            )
-
-            # Даты
-            dates = re.findall(r'(\d{2}\.\d{2}\.\d{4})', text)
-
-            # Классы и дисциплины
-            classes = re.findall(r'КЛАСС\s+([^,\n]+)', text)
-            disciplines = re.findall(r'дисциплин[аы]\s+([^,\n]+)', text)
-
-            # Количество участников
-            participants_match = re.search(r'\s(\d+)\s*$', text)
-
-            # Локация
-            region = city = 'Не указано'
-            if "ПО МЕСТУ НАХОЖДЕНИЯ УЧАСТНИКОВ" in text:
-                region = city = "ПО МЕСТУ НАХОЖДЕНИЯ УЧАСТНИКОВ"
-            else:
-                location_match = re.search(r'РОССИЯ\s+([^,]+),\s*([^,\n]+)', text)
-                if location_match:
-                    region = location_match.group(1).strip()
-                    city_part = location_match.group(2).strip()
-                    if 'г.' in city_part:
-                        city = re.search(r'г\.\s*([^,\s]+)', city_part).group(1)
-                    else:
-                        city = city_part
-
-            return {
-                'ekp_number': ekp_match.group(1) if ekp_match else None,
-                'name': name_match.group(0).strip() if name_match else 'Неизвестное мероприятие',
-                'event_type': 'Физкультурные',
-                'sport_type': 'АВИАМОДЕЛЬНЫЙ СПОРТ',
-                'discipline': ', '.join(classes + disciplines) if classes or disciplines else None,
-                'start_date': datetime.strptime(dates[0], '%d.%m.%Y') if dates else None,
-                'end_date': datetime.strptime(dates[-1], '%d.%m.%Y') if len(dates) > 1 else None,
-                'location_country': 'РОССИЯ',
-                'location_region': region,
-                'location_city': city,
-                'participants_count': int(participants_match.group(1)) if participants_match else None,
-                'age_group': self.smart_parser.parse_age_group(text)
-            }
-        except Exception as e:
-            logger.error(f"Error in basic parsing: {e}")
-            return None
-
-    def _needs_neural_enhancement(self, event_data):
-        """Проверка необходимости улучшения данных с помощью нейронной модели"""
-        if not event_data:
-            return True
-
-        return any(
-            event_data.get(key) in [None, 'Не указано']
-            for key in ['location_region', 'location_city', 'age_group']
-        )
-
-    def _enhance_with_neural(self, event_data, text):
-        """Улучшение данных с помощью нейронной модели"""
-        try:
-            if event_data['location_region'] == 'Не указано' or event_data['location_city'] == 'Не указано':
-                neural_region, neural_city = self.smart_parser.parse_location(text)
-                if event_data['location_region'] == 'Не указано':
-                    event_data['location_region'] = neural_region
-                if event_data['location_city'] == 'Не указано':
-                    event_data['location_city'] = neural_city
-
-            if event_data['age_group'] == 'Не указано':
-                event_data['age_group'] = self.smart_parser.parse_age_group(text)
-
-        except Exception as e:
-            logger.error(f"Error in neural enhancement: {e}")
-
-    def _validate_results(self, event_data):
-        """Валидация результатов парсинга"""
-        required_fields = ['ekp_number', 'name', 'start_date', 'end_date']
-        return all(event_data.get(field) for field in required_fields)
-
-    def parse_pdf(self, file_path):
-        """Основной метод парсинга PDF"""
+    @staticmethod
+    def parse_pdf(file_path):
         logger.info(f"Starting to parse PDF: {file_path}")
         processed_ekp = set()
+        current_sport_type = None  # Текущий вид спорта
 
-        try:
-            with pdfplumber.open(file_path) as pdf:
-                for page_num, page in enumerate(pdf.pages, 1):
-                    logger.info(f"Processing page {page_num}")
-                    text = page.extract_text()
+        with pdfplumber.open(file_path) as pdf:
+            for page_num, page in enumerate(pdf.pages, 1):
+                text = page.extract_text()
 
-                    # Пропускаем заголовок документа
-                    if "ЕДИНОГО КАЛЕНДАРНОГО ПЛАНА" in text:
-                        text = text[text.find("АВИАМОДЕЛЬНЫЙ СПОРТ"):]
+                # Разбиваем текст на блоки по номерам
+                event_blocks = re.split(r'(?=\d{13})', text)
 
-                    event_blocks = re.split(r'(?=\d{13})', text)
+                for block in event_blocks:
+                    if not block.strip():
+                        continue
 
-                    for block in event_blocks:
-                        if not block.strip() or len(block) < 50:  # Пропускаем короткие блоки
-                            continue
+                    # Если вид спорта указан перед "Основной состав", обновляем текущий
+                    new_sport_type = PDFParser._extract_sport_type(block)
+                    if new_sport_type:
+                        current_sport_type = new_sport_type
+                        logger.info(f"Detected sport type: {current_sport_type}")
 
-                        # Пропускаем технические заголовки
-                        if any(header in block for header in [
-                            "ЕДИНОГО КАЛЕНДАРНОГО ПЛАНА",
-                            "Основной состав",
-                            "Наименование спортивного мероприятия",
-                            "Сроки проведения",
-                            "Место проведения"
-                        ]):
-                            continue
-
-                        try:
-                            event = self._parse_event_block(block)
-                            if event and event.ekp_number and event.ekp_number not in processed_ekp:
-                                self._save_event(event)
-                                processed_ekp.add(event.ekp_number)
+                    try:
+                        ekp_match = re.search(r'(\d{13})', block)
+                        if ekp_match and ekp_match.group(1) not in processed_ekp:
+                            event = PDFParser._parse_event_block(block, current_sport_type)
+                            if event:
+                                PDFParser._save_event(event)
+                                processed_ekp.add(ekp_match.group(1))
                                 logger.info(f"Successfully processed event: {event.ekp_number}")
-                        except Exception as e:
-                            logger.error(f"Error processing block: {str(e)}")
-
-        except Exception as e:
-            logger.error(f"Error parsing PDF: {str(e)}")
-            raise
+                    except Exception as e:
+                        logger.error(f"Failed to process block: {str(e)}")
 
     @staticmethod
     def _save_event(event):
-        """Сохранение события в базу данных"""
         try:
             existing = Event.query.filter_by(ekp_number=event.ekp_number).first()
             if not existing:
@@ -240,5 +199,3 @@ class PDFParser:
             db.session.rollback()
             logger.error(f"❌ Database error: {str(e)}")
             raise
-
-
