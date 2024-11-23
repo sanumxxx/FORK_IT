@@ -13,7 +13,8 @@
                        class="block w-full text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                        name="file" required
                        type="file">
-                <button class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed" type="submit">
+                <button class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        type="submit">
                     Загрузить
                 </button>
             </div>
@@ -28,7 +29,8 @@
                 <span id="progressPercentage">0%</span>
             </div>
             <div class="w-full bg-gray-200 rounded-full h-2">
-                <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" id="progressBar" style="width: 0%"></div>
+                <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" id="progressBar"
+                     style="width: 0%"></div>
             </div>
             <div class="text-sm text-gray-500" id="pageStatus">
                 Страница: 0/0
@@ -113,94 +115,162 @@
 
 <!-- Кнопка "Показать еще" -->
 <div class="hidden text-center py-8" id="loadMoreContainer">
-    <button class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700" onclick="loadMore()">
+    <button class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700" onclick="App.loadMore()">
         Показать еще
     </button>
 </div>
 {% endblock %}
 
 {% block scripts %}
+{{ super() }}
+
 <script>
-    let currentPage = 1;
-    let hasNextPage = false;
-    let isLoading = false;
-    let currentEvents = [];
+    (function (App) {
+        let currentPage = 1;
+        let hasNextPage = false;
+        let isLoading = false;
+        let currentEvents = [];
 
-    let processedEvents = new Set();
+        const favoritesKey = 'favoriteEvents';
 
+        function getFavorites() {
+            return JSON.parse(localStorage.getItem(favoritesKey)) || [];
+        }
 
+        function isFavoriteEvent(eventId) {
+            return getFavorites().includes(eventId);
+        }
 
-   function addLogEntry(message, type = 'info') {
-    const logContent = document.getElementById('logContent');
-    const entry = document.createElement('div');
-    entry.className = `py-1 px-2 rounded ${
-        type === 'error' ? 'bg-red-50 text-red-700' :
-        type === 'success' ? 'bg-green-50 text-green-700' :
-        'bg-gray-50 text-gray-700'
-    }`;
-    entry.textContent = message;
-    logContent.appendChild(entry);
-    logContent.scrollTop = logContent.scrollHeight;
-}
-
-    function updateProgress(status) {
-    const progressBar = document.getElementById('progressBar');
-    const progressStatus = document.getElementById('progressStatus');
-    const progressPercentage = document.getElementById('progressPercentage');
-    const pageStatus = document.getElementById('pageStatus');
-    const eventStatus = document.getElementById('eventStatus');
-
-    // Обновляем прогресс-бар
-    progressBar.style.width = `${status.progress}%`;
-    progressStatus.textContent = status.message;
-    progressPercentage.textContent = `${Math.round(status.progress)}%`;
-
-    // Обновляем статус страниц
-    pageStatus.textContent = `Страница: ${status.current_page}/${status.total_pages}`;
-
-    // Обновляем статус событий
-    eventStatus.textContent = `Обработано событий: ${status.processed_events}/${status.total_events}`;
-}
-
-    function addNewEvent(event) {
-    if (processedEvents.has(event.ekp_number)) return;
-
-    processedEvents.add(event.ekp_number);
-    const eventsList = document.getElementById('eventsList');
-    const eventElement = document.createElement('div');
-    eventElement.innerHTML = renderEvent(event);
-    eventsList.insertBefore(eventElement.firstChild, eventsList.firstChild);
-}
+        let processedEvents = new Set();
 
 
+        function addLogEntry(message, type = 'info') {
+            const logContent = document.getElementById('logContent');
+            const entry = document.createElement('div');
+            entry.className = `py-1 px-2 rounded ${
+                type === 'error' ? 'bg-red-50 text-red-700' :
+                    type === 'success' ? 'bg-green-50 text-green-700' :
+                        'bg-gray-50 text-gray-700'
+            }`;
+            entry.textContent = message;
+            logContent.appendChild(entry);
+            logContent.scrollTop = logContent.scrollHeight;
+        }
+
+        function updateProgress(status) {
+            const progressBar = document.getElementById('progressBar');
+            const progressStatus = document.getElementById('progressStatus');
+            const progressPercentage = document.getElementById('progressPercentage');
+            const pageStatus = document.getElementById('pageStatus');
+            const eventStatus = document.getElementById('eventStatus');
+
+            // Обновляем прогресс-бар
+            progressBar.style.width = `${status.progress}%`;
+            progressStatus.textContent = status.message;
+            progressPercentage.textContent = `${Math.round(status.progress)}%`;
+
+            // Обновляем статус страниц
+            pageStatus.textContent = `Страница: ${status.current_page}/${status.total_pages}`;
+
+            // Обновляем статус событий
+            eventStatus.textContent = `Обработано событий: ${status.processed_events}/${status.total_events}`;
+        }
+
+        function addNewEvent(event) {
+            if (processedEvents.has(event.ekp_number)) return;
+
+            processedEvents.add(event.ekp_number);
+            const eventsList = document.getElementById('eventsList');
+            const eventElement = document.createElement('div');
+            eventElement.innerHTML = renderEvent(event);
+            eventsList.insertBefore(eventElement.firstChild, eventsList.firstChild);
+        }
 
 
-    // Управление месяцами
-    const months = [
-        'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-        'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
-    ];
+        // Управление месяцами
+        const months = [
+            'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+            'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+        ];
 
-    let currentMonthIndex = new Date().getMonth();
-    let currentYear = new Date().getFullYear();
+        let currentMonthIndex = new Date().getMonth();
+        let currentYear = new Date().getFullYear();
 
-    // Рендеринг карточки события
-    const renderEvent = (event) => {
-        return `
-        <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+        // Рендеринг карточки события
+        // Рендеринг карточки события
+const renderEvent = (event, isFavorites = false) => {
+    const isFavorite = isFavoriteEvent(event.id);
+
+    // Определяем отображение даты/дней до начала в зависимости от контекста
+    let dateDisplay;
+    if (isFavorites) {
+        const today = new Date();
+        // Преобразуем строки дат в формат Date, разбивая строку даты
+        const [startDay, startMonth, startYear] = (event.start_date || '').split('.');
+        const [endDay, endMonth, endYear] = (event.end_date || '').split('.');
+
+        const startDate = new Date(startYear, startMonth - 1, startDay); // Месяцы в JS начинаются с 0
+        const endDate = new Date(endYear, endMonth - 1, endDay);
+
+        let statusText = '';
+        let statusClass = '';
+
+        if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) { // Проверяем, что даты валидные
+            if (today < startDate) {
+                // Событие еще не началось
+                const daysLeft = Math.ceil((startDate - today) / (1000 * 60 * 60 * 24));
+                statusText = `До начала: ${daysLeft} дн.`;
+                statusClass = daysLeft <= 7 ? 'bg-red-100 text-red-800' :
+                             daysLeft <= 30 ? 'bg-yellow-100 text-yellow-800' :
+                             'bg-green-100 text-green-800';
+            } else if (today > endDate) {
+                // Событие уже закончилось
+                statusText = 'Мероприятие завершено';
+                statusClass = 'bg-gray-100 text-gray-800';
+            } else {
+                // Событие идет в данный момент
+                const daysLeft = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
+                statusText = `До окончания: ${daysLeft} дн.`;
+                statusClass = 'bg-blue-100 text-blue-800';
+            }
+        } else {
+            // Если с датами что-то не так
+            statusText = 'Дата не определена';
+            statusClass = 'bg-gray-100 text-gray-800';
+        }
+
+        dateDisplay = `
+            <span class="px-3 py-1 rounded-full text-sm font-medium ${statusClass}">
+                ${statusText}
+            </span>
+        `;
+    } else {
+        dateDisplay = `${event.start_date || ''} – ${event.end_date || ''}`;
+    }
+
+    return `
+        <div class="bg-white rounded-lg shadow-sm overflow-hidden mb-4 border ${
+            isFavorite ? 'border-yellow-400' : 'border-gray-200'
+        }" data-event-id="${event.id}">
             <div class="p-6">
-                <div class="flex items-center mb-4">
+                <div class="flex items-center justify-between mb-4">
                     <span class="bg-blue-500 text-white px-3 py-1 rounded-full text-sm">
                         ${event.sport_type || 'Спорт'}
                     </span>
+                    <button
+                        class="favorite-button ${
+                            isFavorite ? 'text-yellow-400' : 'text-gray-400'
+                        }"
+                        onclick="App.toggleFavorite(${event.id})">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" class="w-6 h-6">
+                            <path d="M12 17.27L18.18 21 16.54 13.97 22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24 7.46 13.97 5.82 21z"/>
+                        </svg>
+                    </button>
                 </div>
-
                 <h2 class="text-xl font-semibold text-gray-800 mb-4">${event.name}</h2>
-
                 <div class="text-gray-500 uppercase text-sm tracking-wide mb-4">
                     ${event.category || ''}
                 </div>
-
                 <div class="space-y-3">
                     <div class="flex items-center gap-3">
                         <span class="w-8 h-8 flex items-center justify-center bg-blue-50 rounded-full">
@@ -211,7 +281,6 @@
                         <span class="text-gray-500">Дисциплина:</span>
                         <span class="font-medium">${event.discipline || 'Не указано'}</span>
                     </div>
-
                     <div class="flex items-center gap-3">
                         <span class="w-8 h-8 flex items-center justify-center bg-blue-50 rounded-full">
                             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -222,7 +291,6 @@
                         <span class="font-medium">${event.age_group || 'Не указано'}</span>
                     </div>
                 </div>
-
                 <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mt-6 pt-6 border-t">
                     <div class="flex items-center gap-3">
                         <span class="w-8 h-8 flex items-center justify-center bg-gray-50 rounded-full">
@@ -232,10 +300,9 @@
                         </span>
                         <div>
                             <div class="text-sm text-gray-500">Даты проведения</div>
-                            <div>${event.start_date || ''} – ${event.end_date || ''}</div>
+                            <div>${dateDisplay}</div>
                         </div>
                     </div>
-
                     <div class="flex items-center gap-3">
                         <span class="w-8 h-8 flex items-center justify-center bg-gray-50 rounded-full">
                             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -248,7 +315,6 @@
                             <div>${event.location_country || ''}, ${event.location_city || ''}, ${event.location_region || ''}</div>
                         </div>
                     </div>
-
                     <div class="flex items-center gap-3">
                         <span class="w-8 h-8 flex items-center justify-center bg-gray-50 rounded-full">
                             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -260,7 +326,6 @@
                             <div>${event.ekp_number}</div>
                         </div>
                     </div>
-
                     <div class="flex items-center gap-3">
                         <span class="w-8 h-8 flex items-center justify-center bg-gray-50 rounded-full">
                             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -275,348 +340,403 @@
                 </div>
             </div>
         </div>
-        `;
-    };
+    `;
+};
 
-    function updateMonthsDisplay() {
-        const container = document.getElementById('monthsContainer');
-        container.innerHTML = '';
 
-        for (let i = -2; i <= 2; i++) {
-            let monthIndex = currentMonthIndex + i;
-            let year = currentYear;
+        function updateMonthsDisplay() {
+            const container = document.getElementById('monthsContainer');
+            container.innerHTML = '';
 
-            if (monthIndex < 0) {
-                monthIndex += 12;
-                year--;
-            } else if (monthIndex > 11) {
-                monthIndex -= 12;
-                year++;
-            }
+            for (let i = -2; i <= 2; i++) {
+                let monthIndex = currentMonthIndex + i;
+                let year = currentYear;
 
-            const monthDiv = document.createElement('div');
-            monthDiv.className = `text-center cursor-pointer px-6 py-3 rounded-lg transition-colors ${
-                i === 0
-                    ? 'bg-blue-500 text-white'
-                    : 'hover:bg-gray-100'
-            }`;
-            monthDiv.onclick = () => selectMonth(monthIndex, year);
-            monthDiv.innerHTML = `
+                if (monthIndex < 0) {
+                    monthIndex += 12;
+                    year--;
+                } else if (monthIndex > 11) {
+                    monthIndex -= 12;
+                    year++;
+                }
+
+                const monthDiv = document.createElement('div');
+                monthDiv.className = `text-center cursor-pointer px-6 py-3 rounded-lg transition-colors ${
+                    i === 0
+                        ? 'bg-blue-500 text-white'
+                        : 'hover:bg-gray-100'
+                }`;
+                monthDiv.onclick = () => selectMonth(monthIndex, year);
+                monthDiv.innerHTML = `
                 <div class="font-medium">${months[monthIndex]}</div>
                 <div class="text-sm ${i === 0 ? 'text-blue-100' : 'text-gray-500'}">${year}</div>
             `;
-            container.appendChild(monthDiv);
-        }
-    }
-
-    function changeMonth(direction) {
-        currentMonthIndex += direction;
-
-        if (currentMonthIndex > 11) {
-            currentMonthIndex = 0;
-            currentYear++;
-        } else if (currentMonthIndex < 0) {
-            currentMonthIndex = 11;
-            currentYear--;
+                container.appendChild(monthDiv);
+            }
         }
 
-        updateMonthsDisplay();
-        fetchEventsByMonth(currentMonthIndex, currentYear);
-    }
+        function changeMonth(direction) {
+            currentMonthIndex += direction;
 
-    function selectMonth(monthIndex, year) {
-        currentMonthIndex = monthIndex;
-        currentYear = year;
-        updateMonthsDisplay();
-        fetchEventsByMonth(monthIndex, year);
-    }
+            if (currentMonthIndex > 11) {
+                currentMonthIndex = 0;
+                currentYear++;
+            } else if (currentMonthIndex < 0) {
+                currentMonthIndex = 11;
+                currentYear--;
+            }
 
-    async function fetchEventsByMonth(month, year) {
-        const startDate = new Date(year, month, 1);
-        const endDate = new Date(year, month + 1, 0);
+            updateMonthsDisplay();
+            fetchEventsByMonth(currentMonthIndex, currentYear);
+        }
 
-        document.getElementById('startDate').value = startDate.toISOString().split('T')[0];
-        document.getElementById('endDate').value = endDate.toISOString().split('T')[0];
+        function selectMonth(monthIndex, year) {
+            currentMonthIndex = monthIndex;
+            currentYear = year;
+            updateMonthsDisplay();
+            fetchEventsByMonth(monthIndex, year);
+        }
 
-        await fetchEvents();
-    }
+        async function fetchEventsByMonth(month, year) {
+            const startDate = new Date(year, month, 1);
+            const endDate = new Date(year, month + 1, 0);
 
-    // Обработка загрузки файла
-    document.getElementById('uploadForm').onsubmit = async (e) => {
-    e.preventDefault();
-    if (uploadInProgress) return;
+            document.getElementById('startDate').value = startDate.toISOString().split('T')[0];
+            document.getElementById('endDate').value = endDate.toISOString().split('T')[0];
 
-    const form = e.target;
-    const submitButton = form.querySelector('button[type="submit"]');
-    const formData = new FormData(form);
-    const uploadProgress = document.getElementById('uploadProgress');
-    const processingLog = document.getElementById('processingLog');
+            await fetchEvents();
+        }
 
-    try {
-        uploadInProgress = true;
-        submitButton.disabled = true;
-        uploadProgress.classList.remove('hidden');
-        processingLog.classList.remove('hidden');
-        addLogEntry('Начало загрузки файла...');
+        // Обработка загрузки файла
+        document.getElementById('uploadForm').onsubmit = async (e) => {
+            e.preventDefault();
+            if (uploadInProgress) return;
 
-        console.log('Uploading file...'); // Добавим лог
-        const response = await axios.post('/upload', formData);
-        console.log('Upload response:', response.data); // Добавим лог
+            const form = e.target;
+            const submitButton = form.querySelector('button[type="submit"]');
+            const formData = new FormData(form);
+            const uploadProgress = document.getElementById('uploadProgress');
+            const processingLog = document.getElementById('processingLog');
 
-        if (response.data.status === 'processing') {
-            console.log('Starting SSE connection...'); // Добавим лог
-            const eventSource = new EventSource('/parse-status');
+            try {
+                uploadInProgress = true;
+                submitButton.disabled = true;
+                uploadProgress.classList.remove('hidden');
+                processingLog.classList.remove('hidden');
+                addLogEntry('Начало загрузки файла...');
 
-            eventSource.onmessage = (event) => {
-                console.log('SSE message received:', event.data); // Добавим лог
-                const status = JSON.parse(event.data);
-                updateProgress(status);
-                addLogEntry(status.message);
+                console.log('Uploading file...'); // Добавим лог
+                const response = await axios.post('/upload', formData);
+                console.log('Upload response:', response.data); // Добавим лог
 
-                if (status.progress === 100) {
-                    console.log('Processing complete'); // Добавим лог
-                    eventSource.close();
-                    uploadInProgress = false;
-                    submitButton.disabled = false;
-                    fetchEvents();
-                    addLogEntry('Обработка файла успешно завершена', 'success');
+                if (response.data.status === 'processing') {
+                    console.log('Starting SSE connection...'); // Добавим лог
+                    const eventSource = new EventSource('/parse-status');
 
-                    setTimeout(() => {
-                        uploadProgress.classList.add('hidden');
-                        processingLog.classList.add('hidden');
-                    }, 3000);
+                    eventSource.onmessage = (event) => {
+                        console.log('SSE message received:', event.data); // Добавим лог
+                        const status = JSON.parse(event.data);
+                        updateProgress(status);
+                        addLogEntry(status.message);
+
+                        if (status.progress === 100) {
+                            console.log('Processing complete'); // Добавим лог
+                            eventSource.close();
+                            uploadInProgress = false;
+                            submitButton.disabled = false;
+                            fetchEvents();
+                            addLogEntry('Обработка файла успешно завершена', 'success');
+
+                            setTimeout(() => {
+                                uploadProgress.classList.add('hidden');
+                                processingLog.classList.add('hidden');
+                            }, 3000);
+                        }
+                    };
+
+                    eventSource.onerror = (error) => {
+                        console.error('SSE error:', error); // Добавим лог
+                        eventSource.close();
+                        addLogEntry('Ошибка при получении обновлений', 'error');
+                        uploadInProgress = false;
+                        submitButton.disabled = false;
+                    };
+
+                    // Добавим обработчик открытия соединения
+                    eventSource.onopen = () => {
+                        console.log('SSE connection opened'); // Добавим лог
+                        addLogEntry('Соединение установлено');
+                    };
                 }
-            };
-
-            eventSource.onerror = (error) => {
-                console.error('SSE error:', error); // Добавим лог
-                eventSource.close();
-                addLogEntry('Ошибка при получении обновлений', 'error');
+            } catch (error) {
+                console.error('Upload error:', error); // Добавим лог
+                addLogEntry(`Ошибка: ${error.response?.data?.error || 'Неизвестная ошибка'}`, 'error');
                 uploadInProgress = false;
                 submitButton.disabled = false;
-            };
+            }
+        };
 
-            // Добавим обработчик открытия соединения
-            eventSource.onopen = () => {
-                console.log('SSE connection opened'); // Добавим лог
-                addLogEntry('Соединение установлено');
-            };
-        }
-    } catch (error) {
-        console.error('Upload error:', error); // Добавим лог
-        addLogEntry(`Ошибка: ${error.response?.data?.error || 'Неизвестная ошибка'}`, 'error');
-        uploadInProgress = false;
-        submitButton.disabled = false;
-    }
-};
+        async function fetchUniqueSports() {
+            try {
+                const response = await axios.get('/sports');
+                const sports = response.data;
 
-    async function fetchUniqueSports() {
-        try {
-            const response = await axios.get('/sports');
-            const sports = response.data;
+                const sportTypeSelect = document.getElementById('sportType');
+                sportTypeSelect.innerHTML = '';
 
-            const sportTypeSelect = document.getElementById('sportType');
-            sportTypeSelect.innerHTML = '';
+                // Опция "Все виды спорта" по умолчанию
+                const defaultOption = document.createElement('option');
+                defaultOption.value = '';
+                defaultOption.textContent = 'Все виды спорта';
+                sportTypeSelect.appendChild(defaultOption);
 
-            // Опция "Все виды спорта" по умолчанию
-            const defaultOption = document.createElement('option');
-            defaultOption.value = '';
-            defaultOption.textContent = 'Все виды спорта';
-            sportTypeSelect.appendChild(defaultOption);
-
-            // Добавление уникальных видов спорта
-            sports.forEach((sport) => {
-                const option = document.createElement('option');
-                option.value = sport;
-                option.textContent = sport;
-                sportTypeSelect.appendChild(option);
-            });
-        } catch (error) {
-            console.error('Ошибка при загрузке видов спорта:', error);
-        }
-    }
-
-    async function fetchUniqueRegions() {
-        try {
-            const response = await axios.get('/regions');
-            const regions = response.data;
-
-            const regionSelect = document.getElementById('region');
-            regionSelect.innerHTML = '';
-
-            // Опция "Все регионы" по умолчанию
-            const defaultOption = document.createElement('option');
-            defaultOption.value = '';
-            defaultOption.textContent = 'Все регионы';
-            regionSelect.appendChild(defaultOption);
-
-            // Добавление уникальных регионов
-            regions.forEach((region) => {
-                const option = document.createElement('option');
-                option.value = region;
-                option.textContent = region;
-                regionSelect.appendChild(option);
-            });
-        } catch (error) {
-            console.error('Ошибка при загрузке регионов:', error);
-        }
-    }
-
-    // Получение событий
-    async function fetchEvents(resetPage = true) {
-        if (isLoading) return;
-
-        if (resetPage) {
-            currentPage = 1;
-            currentEvents = [];
-            document.getElementById('eventsList').innerHTML = '';
+                // Добавление уникальных видов спорта
+                sports.forEach((sport) => {
+                    const option = document.createElement('option');
+                    option.value = sport;
+                    option.textContent = sport;
+                    sportTypeSelect.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Ошибка при загрузке видов спорта:', error);
+            }
         }
 
-        const loader = document.getElementById('loader');
-        const loadMoreContainer = document.getElementById('loadMoreContainer');
+        async function fetchUniqueRegions() {
+            try {
+                const response = await axios.get('/regions');
+                const regions = response.data;
 
-        try {
-            isLoading = true;
-            loader.classList.remove('hidden');
-            loadMoreContainer.classList.add('hidden');
+                const regionSelect = document.getElementById('region');
+                regionSelect.innerHTML = '';
 
-            const params = {
-                sport_type: document.getElementById('sportType').value,
-                region: document.getElementById('region').value,
-                start_date: document.getElementById('startDate').value,
-                end_date: document.getElementById('endDate').value,
-                page: currentPage
-            };
+                // Опция "Все регионы" по умолчанию
+                const defaultOption = document.createElement('option');
+                defaultOption.value = '';
+                defaultOption.textContent = 'Все регионы';
+                regionSelect.appendChild(defaultOption);
 
-            const response = await axios.get('/events', {params});
-            const data = response.data;
-
-            currentEvents = resetPage ? data.events : [...currentEvents, ...data.events];
-            hasNextPage = data.has_next;
-
-            // Обновляем список событий
-            const eventsList = document.getElementById('eventsList');
-            eventsList.innerHTML = currentEvents.map(renderEvent).join('');
-
-            // Обновляем количество событий
-            const eventCount = document.getElementById('eventCount');
-            eventCount.textContent = `Найдено записей: ${data.total}`;
-
-            // Показываем/скрываем кнопку "Показать еще"
-            loadMoreContainer.classList.toggle('hidden', !hasNextPage);
-
-        } catch (error) {
-            console.error('Ошибка при получении событий:', error);
-            const eventCount = document.getElementById('eventCount');
-            eventCount.textContent = 'Ошибка загрузки событий';
-        } finally {
-            isLoading = false;
-            loader.classList.add('hidden');
+                // Добавление уникальных регионов
+                regions.forEach((region) => {
+                    const option = document.createElement('option');
+                    option.value = region;
+                    option.textContent = region;
+                    regionSelect.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Ошибка при загрузке регионов:', error);
+            }
         }
+
+        // Получение событий
+        async function fetchEvents(resetPage = true) {
+            if (isLoading) return;
+
+            if (resetPage) {
+                currentPage = 1;
+                currentEvents = [];
+                document.getElementById('eventsList').innerHTML = '';
+            }
+
+            const loader = document.getElementById('loader');
+            const loadMoreContainer = document.getElementById('loadMoreContainer');
+
+            try {
+                isLoading = true;
+                loader.classList.remove('hidden');
+                loadMoreContainer.classList.add('hidden');
+
+                const params = {
+                    sport_type: document.getElementById('sportType').value,
+                    region: document.getElementById('region').value,
+                    start_date: document.getElementById('startDate').value,
+                    end_date: document.getElementById('endDate').value,
+                    page: currentPage
+                };
+
+                const response = await axios.get('/events', {params});
+                let data = response.data.events;
+
+                // Separate favorite and regular events
+                const favoriteEvents = data.filter(event => isFavoriteEvent(event.id));
+                const regularEvents = data.filter(event => !isFavoriteEvent(event.id));
+
+                currentEvents = resetPage
+                    ? [...favoriteEvents, ...regularEvents]
+                    : [...currentEvents, ...favoriteEvents, ...regularEvents];
+
+                hasNextPage = response.data.has_next;
+
+                // Update the event list
+                // Update the event list
+const eventsList = document.getElementById('eventsList');
+eventsList.innerHTML = currentEvents.map(event => renderEvent(event, false)).join(''); // false для основного списка
+
+                // Update the event count
+                const eventCount = document.getElementById('eventCount');
+                eventCount.textContent = `Найдено записей: ${response.data.total}`;
+
+                // Show/hide the "Load More" button
+                loadMoreContainer.classList.toggle('hidden', !hasNextPage);
+
+                // Update the favorites UI
+                updateFavoritesUI();
+
+            } catch (error) {
+                console.error('Ошибка при получении событий:', error);
+                const eventCount = document.getElementById('eventCount');
+                eventCount.textContent = 'Ошибка загрузки событий';
+            } finally {
+                isLoading = false;
+                loader.classList.add('hidden');
+            }
+        }
+
+        App.loadMore = async function() {
+            if (!hasNextPage || isLoading) return;
+            currentPage++;
+            await fetchEvents(false);
+        }
+
+        function updateFavoritesUI() {
+    const favorites = getFavorites();
+    const favoritesCount = document.getElementById('favoritesCount');
+    const favoritesList = document.getElementById('favoritesList');
+
+    favoritesCount.textContent = favorites.length;
+
+    if (favorites.length === 0) {
+        favoritesList.innerHTML = '<p class="text-sm text-gray-500">Список избранных пуст</p>';
+    } else {
+        favoritesList.innerHTML = currentEvents
+            .filter(event => favorites.includes(event.id))
+            .map(event => renderEvent(event, true)) // Передаем true для отображения в избранном
+            .join('');
     }
 
-    async function loadMore() {
-        if (!hasNextPage || isLoading) return;
-        currentPage++;
-        await fetchEvents(false);
-    }
-
-    // Обработчики событий для фильтров
-    document.getElementById('sportType').addEventListener('change', () => fetchEvents(true));
-    document.getElementById('region').addEventListener('change', () => fetchEvents(true));
-    document.getElementById('startDate').addEventListener('change', () => fetchEvents(true));
-    document.getElementById('endDate').addEventListener('change', () => fetchEvents(true));
-
-    // Инициализация при загрузке страницы
-    document.addEventListener('DOMContentLoaded', () => {
-        fetchUniqueSports();
-        fetchUniqueRegions();
-        updateMonthsDisplay();
-        fetchEventsByMonth(currentMonthIndex, currentYear);
+    // Обновить отображение кнопок в карточках
+    document.querySelectorAll('.favorite-button').forEach(button => {
+        const eventId = parseInt(button.closest('[data-event-id]').dataset.eventId, 10);
+        button.classList.toggle('text-yellow-400', isFavoriteEvent(eventId));
+        button.classList.toggle('text-gray-400', !isFavoriteEvent(eventId));
     });
+}
+
+        function toggleFavorite(eventId) {
+            const favorites = getFavorites();
+            const index = favorites.indexOf(eventId);
+
+            if (index === -1) {
+                favorites.push(eventId); // Добавить
+            } else {
+                favorites.splice(index, 1); // Удалить
+            }
+
+            localStorage.setItem(favoritesKey, JSON.stringify(favorites));
+            updateFavoritesUI();
+        }
+
+        // Обработчики событий для фильтров
+        document.getElementById('sportType').addEventListener('change', () => fetchEvents(true));
+        document.getElementById('region').addEventListener('change', () => fetchEvents(true));
+        document.getElementById('startDate').addEventListener('change', () => fetchEvents(true));
+        document.getElementById('endDate').addEventListener('change', () => fetchEvents(true));
+
+
+        // Инициализация при загрузке страницы
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchUniqueSports();
+            fetchUniqueRegions();
+            updateMonthsDisplay();
+            fetchEventsByMonth(currentMonthIndex, currentYear);
+        });
+    })(window.App);
 </script>
 
 <script nonce="{{ csp_nonce() }}">
-let uploadInProgress = false;
+    let uploadInProgress = false;
 
-function addLogEntry(message, type = 'info') {
-    const logContent = document.getElementById('logContent');
-    const entry = document.createElement('div');
-    entry.className = `py-1 px-2 rounded ${
-        type === 'error' ? 'bg-red-50 text-red-700' :
-        type === 'success' ? 'bg-green-50 text-green-700' :
-        'bg-gray-50 text-gray-700'
-    }`;
-    entry.textContent = message;
-    logContent.appendChild(entry);
-    logContent.scrollTop = logContent.scrollHeight;
-}
+    function addLogEntry(message, type = 'info') {
+        const logContent = document.getElementById('logContent');
+        const entry = document.createElement('div');
+        entry.className = `py-1 px-2 rounded ${
+            type === 'error' ? 'bg-red-50 text-red-700' :
+                type === 'success' ? 'bg-green-50 text-green-700' :
+                    'bg-gray-50 text-gray-700'
+        }`;
+        entry.textContent = message;
+        logContent.appendChild(entry);
+        logContent.scrollTop = logContent.scrollHeight;
+    }
 
-function updateProgress(status) {
-    const progressBar = document.getElementById('progressBar');
-    const progressStatus = document.getElementById('progressStatus');
-    const progressPercentage = document.getElementById('progressPercentage');
-    const pageStatus = document.getElementById('pageStatus');
+    function updateProgress(status) {
+        const progressBar = document.getElementById('progressBar');
+        const progressStatus = document.getElementById('progressStatus');
+        const progressPercentage = document.getElementById('progressPercentage');
+        const pageStatus = document.getElementById('pageStatus');
 
-    progressBar.style.width = `${status.progress}%`;
-    progressStatus.textContent = status.message;
-    progressPercentage.textContent = `${Math.round(status.progress)}%`;
-    pageStatus.textContent = `Страница: ${status.current_page}/${status.total_pages}`;
-}
+        progressBar.style.width = `${status.progress}%`;
+        progressStatus.textContent = status.message;
+        progressPercentage.textContent = `${Math.round(status.progress)}%`;
+        pageStatus.textContent = `Страница: ${status.current_page}/${status.total_pages}`;
+    }
 
-document.getElementById('uploadForm').onsubmit = async (e) => {
-    e.preventDefault();
-    if (uploadInProgress) return;
+    document.getElementById('uploadForm').onsubmit = async (e) => {
+        e.preventDefault();
+        if (uploadInProgress) return;
 
-    const form = e.target;
-    const submitButton = form.querySelector('button[type="submit"]');
-    const formData = new FormData(form);
-    const uploadProgress = document.getElementById('uploadProgress');
-    const processingLog = document.getElementById('processingLog');
+        const form = e.target;
+        const submitButton = form.querySelector('button[type="submit"]');
+        const formData = new FormData(form);
+        const uploadProgress = document.getElementById('uploadProgress');
+        const processingLog = document.getElementById('processingLog');
 
-    try {
-        uploadInProgress = true;
-        submitButton.disabled = true;
-        uploadProgress.classList.remove('hidden');
-        processingLog.classList.remove('hidden');
-        addLogEntry('Начало загрузки файла...');
+        try {
+            uploadInProgress = true;
+            submitButton.disabled = true;
+            uploadProgress.classList.remove('hidden');
+            processingLog.classList.remove('hidden');
+            addLogEntry('Начало загрузки файла...');
 
-        const response = await axios.post('/upload', formData);
+            const response = await axios.post('/upload', formData);
 
-        if (response.data.status === 'processing') {
-            const eventSource = new EventSource('/parse-status');
+            if (response.data.status === 'processing') {
+                const eventSource = new EventSource('/parse-status');
 
-            eventSource.onmessage = (event) => {
-                const status = JSON.parse(event.data);
-                updateProgress(status);
-                addLogEntry(status.message);
+                eventSource.onmessage = (event) => {
+                    const status = JSON.parse(event.data);
+                    updateProgress(status);
+                    addLogEntry(status.message);
 
-                if (status.progress === 100) {
+                    if (status.progress === 100) {
+                        eventSource.close();
+                        uploadInProgress = false;
+                        submitButton.disabled = false;
+                        fetchEvents();
+                        addLogEntry('Обработка файла успешно завершена', 'success');
+
+                        setTimeout(() => {
+                            uploadProgress.classList.add('hidden');
+                            processingLog.classList.add('hidden');
+                        }, 3000);
+                    }
+                };
+
+                eventSource.onerror = () => {
                     eventSource.close();
+                    addLogEntry('Ошибка при получении обновлений', 'error');
                     uploadInProgress = false;
                     submitButton.disabled = false;
-                    fetchEvents();
-                    addLogEntry('Обработка файла успешно завершена', 'success');
-
-                    setTimeout(() => {
-                        uploadProgress.classList.add('hidden');
-                        processingLog.classList.add('hidden');
-                    }, 3000);
-                }
-            };
-
-            eventSource.onerror = () => {
-                eventSource.close();
-                addLogEntry('Ошибка при получении обновлений', 'error');
-                uploadInProgress = false;
-                submitButton.disabled = false;
-            };
+                };
+            }
+        } catch (error) {
+            addLogEntry(`Ошибка: ${error.response?.data?.error || 'Неизвестная ошибка'}`, 'error');
+            uploadInProgress = false;
+            submitButton.disabled = false;
         }
-    } catch (error) {
-        addLogEntry(`Ошибка: ${error.response?.data?.error || 'Неизвестная ошибка'}`, 'error');
-        uploadInProgress = false;
-        submitButton.disabled = false;
-    }
-};
+    };
+
+
 </script>
+
 {% endblock %}

@@ -9,16 +9,146 @@
     {% block extra_head %}{% endblock %}
 </head>
 <body class="bg-gray-50 min-h-screen">
-    <nav class="bg-white shadow-sm">
-        <div class="container mx-auto px-4 py-3">
-            <h1 class="text-xl font-bold">Спортивный календарь</h1>
-        </div>
-    </nav>
+    <!-- Навигация -->
+    <nav class="bg-white shadow-sm sticky top-0 z-50">
+    <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+        <h1 class="text-xl font-bold">Спортивный календарь</h1>
+        <div class="relative">
+            <!-- Кнопка "Избранное" -->
+            <button id="favoritesButton" class="relative flex items-center gap-2 text-gray-600 hover:text-blue-600">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" class="w-6 h-6">
+                    <path d="M12 17.27L18.18 21 16.54 13.97 22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24 7.46 13.97 5.82 21z"/>
+                </svg>
+                <span>Избранное</span>
+                <span id="favoritesCount" class="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">0</span>
+            </button>
 
+            <!-- Панель "Избранное" -->
+            <div id="favoritesPanel" class="hidden fixed right-4 mt-2 bg-white shadow-xl rounded-lg overflow-hidden z-50" style="width: min(80rem, calc(100vw - 2rem)); max-height: 80vh;">
+    <div class="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
+        <h2 class="text-lg font-semibold text-gray-800">Избранные мероприятия</h2>
+        <button onclick="App.clearFavorites()" class="text-sm text-blue-600 hover:text-blue-700 hover:underline">
+            Очистить избранное
+        </button>
+    </div>
+    <div id="favoritesList" class="overflow-y-auto p-4 space-y-4" style="max-height: calc(80vh - 4rem);">
+        <p class="text-sm text-gray-500">Список избранных пуст</p>
+    </div>
+</div>
+        </div>
+    </div>
+</nav>
+
+    <!-- Основной контент -->
     <main class="container mx-auto px-4 py-8">
         {% block content %}{% endblock %}
     </main>
 
-    {% block scripts %}{% endblock %}
+
+    {% block scripts %}
+<script>
+    window.App = window.App || {};
+
+    (function(App) {
+        App.currentEvents = App.currentEvents || [];
+
+        const favoritesButton = document.getElementById('favoritesButton');
+        const favoritesPanel = document.getElementById('favoritesPanel');
+
+        favoritesButton.addEventListener('click', () => {
+            console.log('Clicked favorites button');
+            favoritesPanel.classList.toggle('hidden');
+        });
+
+        // Функции для работы с избранным
+        App.favoritesKey = 'favoriteEvents';
+
+        App.getFavorites = function() {
+            return JSON.parse(localStorage.getItem(App.favoritesKey)) || [];
+        };
+
+        App.isFavoriteEvent = function(eventId) {
+            return App.getFavorites().includes(eventId);
+        };
+
+        App.toggleFavorite = function(eventId) {
+            const favorites = App.getFavorites();
+            const index = favorites.indexOf(eventId);
+
+            if (index === -1) {
+                favorites.push(eventId);
+            } else {
+                favorites.splice(index, 1);
+            }
+
+            localStorage.setItem(App.favoritesKey, JSON.stringify(favorites));
+            App.updateFavoritesUI();
+        };
+
+        App.updateFavoritesUI = function() {
+        const favorites = App.getFavorites();
+        const favoritesCount = document.getElementById('favoritesCount');
+        const favoritesList = document.getElementById('favoritesList');
+
+        favoritesCount.textContent = favorites.length;
+
+        if (favorites.length === 0) {
+            favoritesList.innerHTML = '<p class="text-sm text-gray-500">Список избранных пуст</p>';
+        } else {
+            favoritesList.innerHTML = App.currentEvents
+                .filter(event => favorites.includes(event.id))
+                .map(event => {
+                    const daysLeft = event.days_left;
+                    const daysLeftClass = daysLeft <= 7 ? 'bg-red-100 text-red-800' :
+                                       daysLeft <= 30 ? 'bg-yellow-100 text-yellow-800' :
+                                       'bg-green-100 text-green-800';
+
+                    return `
+                        <div class="bg-white rounded-lg shadow-sm overflow-hidden mb-4 border border-yellow-400" data-event-id="${event.id}">
+                            <div class="p-4">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="bg-blue-500 text-white px-3 py-1 rounded-full text-sm">${event.sport_type || 'Спорт'}</span>
+                                    <button class="favorite-button text-yellow-400" onclick="App.toggleFavorite(${event.id})">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" class="w-6 h-6">
+                                            <path d="M12 17.27L18.18 21 16.54 13.97 22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24 7.46 13.97 5.82 21z"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <h2 class="text-lg font-semibold text-gray-800 mb-2">${event.name}</h2>
+                                <div class="flex justify-between items-center">
+                                    <span class="px-3 py-1 rounded-full text-sm font-medium ${daysLeftClass}">
+                                        ${daysLeft > 0 ? `До начала: ${daysLeft} дн.` : 'Мероприятие идет'}
+                                    </span>
+                                    <span class="text-sm text-gray-500">${event.location_city || ''}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                })
+                .join('');
+        }
+
+        document.querySelectorAll('.favorite-button').forEach(button => {
+            const eventId = parseInt(button.closest('[data-event-id]').dataset.eventId, 10);
+            button.classList.toggle('text-yellow-400', App.isFavoriteEvent(eventId));
+            button.classList.toggle('text-gray-400', !App.isFavoriteEvent(eventId));
+        });
+    };
+
+        App.clearFavorites = function() {
+            localStorage.removeItem(App.favoritesKey);
+            App.updateFavoritesUI();
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            App.updateFavoritesUI();
+        });
+
+    })(window.App);
+</script>
+
+
+
 </body>
 </html>
+{% endblock%}

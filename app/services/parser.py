@@ -5,7 +5,12 @@ from app.models.event import Event
 from app import db
 import pdfplumber
 
-logging.basicConfig(level=logging.INFO)
+ENABLE_DEBUG_LOGGING = False  # Измените на True чтобы включить подробное логирование
+
+# Настройка логирования в зависимости от константы
+logging.basicConfig(
+    level=logging.DEBUG if ENABLE_DEBUG_LOGGING else logging.WARNING
+)
 logger = logging.getLogger(__name__)
 
 
@@ -100,24 +105,58 @@ class PDFParser:
                 disciplines.add(cleaned)
         return ", ".join(sorted(disciplines)) if disciplines else None
 
-    def _parse_event_block(self, block, sport_type):
+    def _parse_event_block(self, block, sport_type, page):
         try:
             logger.info(f"Parsing block:\n{block}\n{'-' * 50}")
-            full_text = " ".join(line.strip() for line in block.split('\n') if line.strip())
-            logger.info(f"Full text for processing: {full_text}")
+
+            # Извлекаем слова со стилями
+            words = page.extract_words(
+                extra_attrs=['fontname', 'size'],
+                keep_blank_chars=True
+            )
+
+            # Debug: печатаем все слова с их характеристиками
+            for word in words:
+                logger.debug(f"Word: {word['text']}, Size: {word['size']}, Font: {word['fontname']}")
 
             # Поиск EKP номера
-            ekp_match = re.search(r'(\d{13})', full_text)
+            ekp_match = re.search(r'(\d{13})', block)
             ekp_number = ekp_match.group(1) if ekp_match else None
 
             # Поиск названия мероприятия
-            name_match = re.search(
-                r'(ЧЕМПИОНАТ|ВСЕРОССИЙСКИЕ СОРЕВНОВАНИЯ|КУБОК РОССИИ|МЕЖДУНАРОДНЫЕ СОРЕВНОВАНИЯ|[А-ЯЁ\s]{5,})',
-                full_text
-            )
-            event_name = name_match.group(0).strip() if name_match else 'Неизвестное мероприятие'
+            event_name = None
+            if ekp_number:
+                ekp_pos = block.find(ekp_number) + len(ekp_number)
+                name_parts = []
 
-            # Поиск всех дат
+                for word in words:
+                    # Проверяем размер шрифта (8) и что текст написан капсом
+                    if abs(float(word['size']) - 8.0) < 0.1 and word[
+                        'text'].isupper():  # используем 0.1 для погрешности
+                        text = word['text'].strip()
+                        if text and not text.isdigit():  # игнорируем числа
+                            name_parts.append(text)
+                    elif name_parts:  # если уже начали собирать название и встретили другой текст
+                        # Проверяем, не является ли следующее слово частью названия
+                        next_text = word['text'].strip()
+                        if not (abs(float(word['size']) - 8.0) < 0.1 and next_text.isupper()):
+                            break
+
+                if name_parts:
+                    event_name = ' '.join(name_parts)
+                    logger.info(f"Found name by font size: {event_name}")
+
+            # Если не нашли название по размеру шрифта, используем запасной вариант
+            if not event_name:
+                name_match = re.search(
+                    r'(ЧЕМПИОНАТ|ВСЕРОССИЙСКИЕ СОРЕВНОВАНИЯ|КУБОК РОССИИ|МЕЖДУНАРОДНЫЕ СОРЕВНОВАНИЯ|ПЕРВЕНСТВО|[А-ЯЁ\s]{5,})',
+                    block
+                )
+                event_name = name_match.group(0).strip() if name_match else 'Неизвестное мероприятие'
+                logger.info(f"Found name by regex: {event_name}")
+
+            full_text = " ".join(line.strip() for line in block.split('\n') if line.strip())
+            # Поиск дат
             dates = re.findall(r'(\d{2}\.\d{2}\.\d{4})', full_text)
             start_date = datetime.strptime(dates[0], '%d.%m.%Y') if dates else None
             end_date = datetime.strptime(dates[1], '%d.%m.%Y') if len(dates) > 1 else None
@@ -207,7 +246,7 @@ class PDFParser:
                 text = page.extract_text()
                 event_blocks = re.split(r'(?=\d{13})', text)
 
-                # Вычисляем прогресс на основе обработанных страниц
+                # Вычисляем прогресс
                 progress = (page_num / self.total_pages) * 100
                 self.update_status(
                     f"Обработка страницы {page_num} из {self.total_pages}",
@@ -225,7 +264,7 @@ class PDFParser:
                     try:
                         ekp_match = re.search(r'(\d{13})', block)
                         if ekp_match and ekp_match.group(1) not in processed_ekp:
-                            event = self._parse_event_block(block, current_sport_type)
+                            event = self._parse_event_block(block, current_sport_type, page)
                             if event:
                                 self._save_event(event)
                                 processed_ekp.add(ekp_match.group(1))
